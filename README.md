@@ -55,7 +55,7 @@ Episodes are numbered in CSV order, and each episode's URL is its GUID, so chang
 }
 ```
 
-Optional fields: `delimiter` (default `\u001f`), `website_url` (defaults to this repo), `image_url` and `feed_url` (default to their location in the bucket, from `hosting.json`).
+Optional fields: `delimiter` (default `\u001f`), `website` (defaults to this repo), `image_url` and `feed_url` (default to their location in the bucket, from `hosting.json`).
 
 ## Hosting
 

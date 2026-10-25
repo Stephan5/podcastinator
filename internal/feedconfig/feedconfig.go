@@ -21,7 +21,7 @@ type Config struct {
 	// Delimiter is a single character. Defaults to \x1F if empty.
 	// Use the JSON unicode escape \u001f to represent the unit separator.
 	Delimiter  string `json:"delimiter,omitempty"`
-	WebsiteURL string `json:"website_url,omitempty"`
+	WebsiteURL string `json:"website,omitempty"`
 	ImageURL   string `json:"image_url,omitempty"`
 	FeedURL    string `json:"feed_url,omitempty"`
 }

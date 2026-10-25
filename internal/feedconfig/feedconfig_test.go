@@ -117,3 +117,17 @@ func TestLoadWithCustomDelimiter(t *testing.T) {
 		t.Errorf("DelimiterRune = %q; want ';'", cfg.DelimiterRune())
 	}
 }
+
+func TestLoadWebsite(t *testing.T) {
+	dir := t.TempDir()
+	content := `{"title":"Test Show","website":"https://example.com/show"}`
+	os.WriteFile(filepath.Join(dir, feedconfig.Filename), []byte(content), 0644)
+
+	cfg, err := feedconfig.Load(dir)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.WebsiteURL != "https://example.com/show" {
+		t.Errorf("WebsiteURL = %q; want %q", cfg.WebsiteURL, "https://example.com/show")
+	}
+}
