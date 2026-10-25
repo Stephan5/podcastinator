@@ -151,7 +151,7 @@ func loadLocalFeeds(feedDirAbs string) ([]feed, error) {
 	var feeds []feed
 	for _, f := range all {
 		if _, err := os.Stat(f.xmlPath()); os.IsNotExist(err) {
-			fmt.Printf("Skipping %q — no feed.xml; run podcastinator build %s first.\n", f.slug, f.slug)
+			fmt.Printf("Skipping %q: no feed.xml; run podcastinator build %s first.\n", f.slug, f.slug)
 			continue
 		}
 		feeds = append(feeds, f)

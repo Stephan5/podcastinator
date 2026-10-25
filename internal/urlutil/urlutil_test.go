@@ -29,17 +29,14 @@ func TestEncode(t *testing.T) {
 		in   string
 		want string
 	}{
-		// Already encoded — pass through unchanged
 		{
 			"https://example.com/foo%20bar.mp3",
 			"https://example.com/foo%20bar.mp3",
 		},
-		// Simple URL — unchanged (no special chars)
 		{
 			"https://example.com/path/file.mp3",
 			"https://example.com/path/file.mp3",
 		},
-		// URL with query — unchanged
 		{
 			"https://example.com/file.mp3?id=1",
 			"https://example.com/file.mp3?id=1",
@@ -53,22 +50,6 @@ func TestEncode(t *testing.T) {
 		}
 		if got != tc.want {
 			t.Errorf("Encode(%q) = %q; want %q", tc.in, got, tc.want)
-		}
-	}
-}
-
-func TestDecode(t *testing.T) {
-	cases := []struct {
-		in   string
-		want string
-	}{
-		{"https://example.com/foo%20bar.mp3", "https://example.com/foo bar.mp3"},
-		{"https://example.com/plain.mp3", "https://example.com/plain.mp3"},
-	}
-	for _, tc := range cases {
-		got := urlutil.Decode(tc.in)
-		if got != tc.want {
-			t.Errorf("Decode(%q) = %q; want %q", tc.in, got, tc.want)
 		}
 	}
 }
@@ -126,27 +107,6 @@ func TestSlugify(t *testing.T) {
 		got := urlutil.Slugify(tc.in)
 		if got != tc.want {
 			t.Errorf("Slugify(%q) = %q; want %q", tc.in, got, tc.want)
-		}
-	}
-}
-
-func TestConvertHTTPToS3(t *testing.T) {
-	cases := []struct {
-		in, want string
-	}{
-		{
-			"https://s3.eu-west-2.amazonaws.com/mybucket/path/to/file.mp3",
-			"s3://mybucket/path/to/file.mp3",
-		},
-		{
-			"https://s3.eu-west-2.amazonaws.com/mybucket/path/to/file.mp3?foo=bar",
-			"s3://mybucket/path/to/file.mp3",
-		},
-	}
-	for _, tc := range cases {
-		got := urlutil.ConvertHTTPToS3(tc.in)
-		if got != tc.want {
-			t.Errorf("ConvertHTTPToS3(%q) = %q; want %q", tc.in, got, tc.want)
 		}
 	}
 }

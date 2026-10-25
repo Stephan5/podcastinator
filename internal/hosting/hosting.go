@@ -1,5 +1,4 @@
-// Package hosting handles the repo-wide self-hosting configuration loaded from
-// hosting.json at the root of the feed directory.
+// Package hosting reads hosting.json, which says where every feed is hosted.
 package hosting
 
 import (
@@ -31,7 +30,7 @@ type Config struct {
 	PublicURL string `json:"public_url,omitempty"`
 }
 
-// Load reads hosting.json from feedDir. Returns nil, nil if the file does not exist.
+// Load reads feedDir's hosting.json, returning nil if there isn't one.
 func Load(feedDir string) (*Config, error) {
 	path := filepath.Join(feedDir, Filename)
 	data, err := os.ReadFile(path)

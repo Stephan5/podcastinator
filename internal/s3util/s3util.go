@@ -1,4 +1,4 @@
-// Package s3util provides S3 operations for podcast self-hosting.
+// Package s3util wraps the S3 calls podcastinator makes.
 package s3util
 
 import (
@@ -19,14 +19,12 @@ import (
 	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
-// Client wraps S3 operations.
 type Client struct {
-	svc    *s3.Client
-	tm     *transfermanager.Client
-	region string
+	svc *s3.Client
+	tm  *transfermanager.Client
 }
 
-// New creates a new S3 client for the given region.
+// New returns a client for region, with credentials from the environment.
 func New(ctx context.Context, region string) (*Client, error) {
 	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(region))
 	if err != nil {
@@ -35,11 +33,7 @@ func New(ctx context.Context, region string) (*Client, error) {
 	// A custom endpoint (AWS_ENDPOINT_URL, e.g. SeaweedFS in CI) needs path-style addressing.
 	usePathStyle := os.Getenv("AWS_ENDPOINT_URL") != ""
 	svc := s3.NewFromConfig(cfg, func(o *s3.Options) { o.UsePathStyle = usePathStyle })
-	return &Client{
-		svc:    svc,
-		tm:     transfermanager.New(svc),
-		region: region,
-	}, nil
+	return &Client{svc: svc, tm: transfermanager.New(svc)}, nil
 }
 
 // UploadReader uploads from r to s3://bucket/key.
@@ -56,7 +50,7 @@ func (c *Client) UploadReader(ctx context.Context, bucket, key, contentType stri
 	return nil
 }
 
-// DownloadAndUpload downloads srcURL and uploads to s3://bucket/key.
+// DownloadAndUpload streams srcURL to s3://bucket/key.
 func (c *Client) DownloadAndUpload(ctx context.Context, srcURL, bucket, key, contentType string) error {
 	resp, err := http.Get(srcURL) //nolint:noctx
 	if err != nil {
@@ -114,7 +108,7 @@ func optional(s string) *string {
 	return aws.String(s)
 }
 
-// Move copies srcKey to dstKey within the same bucket (or across buckets) then deletes srcKey.
+// Move copies an object to dstBucket/dstKey, then deletes the original.
 func (c *Client) Move(ctx context.Context, srcBucket, srcKey, dstBucket, dstKey string) error {
 	copySource := fmt.Sprintf("%s/%s", srcBucket, srcKey)
 	_, err := c.svc.CopyObject(ctx, &s3.CopyObjectInput{
@@ -131,7 +125,7 @@ func (c *Client) Move(ctx context.Context, srcBucket, srcKey, dstBucket, dstKey 
 	return nil
 }
 
-// Delete removes an object from S3.
+// Delete deletes s3://bucket/key.
 func (c *Client) Delete(ctx context.Context, bucket, key string) error {
 	_, err := c.svc.DeleteObject(ctx, &s3.DeleteObjectInput{
 		Bucket: aws.String(bucket),
@@ -143,7 +137,7 @@ func (c *Client) Delete(ctx context.Context, bucket, key string) error {
 	return nil
 }
 
-// List returns all object keys under the given prefix in the bucket.
+// List returns every key in bucket under prefix.
 func (c *Client) List(ctx context.Context, bucket, prefix string) ([]string, error) {
 	var keys []string
 	paginator := s3.NewListObjectsV2Paginator(c.svc, &s3.ListObjectsV2Input{
@@ -162,7 +156,7 @@ func (c *Client) List(ctx context.Context, bucket, prefix string) ([]string, err
 	return keys, nil
 }
 
-// ValidateURL checks that a URL returns a non-error HTTP status.
+// ValidateURL fails unless a HEAD request for rawURL succeeds.
 func ValidateURL(rawURL string) error {
 	resp, err := http.Head(rawURL) //nolint:noctx
 	if err != nil {

@@ -59,7 +59,7 @@ Examples:
 					if len(args) > 0 {
 						return fmt.Errorf("feed %q has no %s", f.slug, csvFilename)
 					}
-					fmt.Printf("Skipping %q — no %s.\n\n", f.slug, csvFilename)
+					fmt.Printf("Skipping %q: no %s.\n\n", f.slug, csvFilename)
 					continue
 				}
 				printHeading("Building: " + f.slug)
@@ -114,7 +114,6 @@ func buildFeed(feedDirAbs string, f feed, concurrency int) error {
 		WebsiteURL:  f.cfg.WebsiteURL,
 		ImageURL:    imageURL,
 		FeedURL:     feedURL,
-		RepoDir:     f.slug,
 		Type:        f.cfg.Type,
 		InputsHash:  hash,
 		Concurrency: concurrency,

@@ -50,7 +50,6 @@ func TestReadWriteCustomDelimiter(t *testing.T) {
 		t.Fatalf("Write: %v", err)
 	}
 
-	// Verify raw file uses ; delimiter
 	data, _ := os.ReadFile(path)
 	content := string(data)
 	if len(content) == 0 || content[0] == '\x1f' {
@@ -75,7 +74,6 @@ func TestReadEmptyDescription(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "feed.csv")
 
-	// Write manually with unit separator, empty description field
 	content := "title\x1fdescription\x1fdate\x1furl\n" +
 		"My Episode\x1f\x1fSat, 29 Jun 2002 03:00:00 GMT\x1fhttps://example.com/1.mp3\n"
 	os.WriteFile(path, []byte(content), 0644)
@@ -95,17 +93,12 @@ func TestReadEmptyDescription(t *testing.T) {
 	}
 }
 
-// TestReadDescriptionStartingWithQuote is a regression test for the bug where
-// encoding/csv mis-parsed rows when a description field began with a double-quote
-// (e.g. `"Episode Name" is the final...`). encoding/csv entered quoted-field mode
-// and consumed the following newline, merging two rows into one and shifting all
-// column values for the subsequent row.
+// TestReadDescriptionStartingWithQuote checks a description starting with a
+// double quote doesn't swallow the next row, as it did with encoding/csv.
 func TestReadDescriptionStartingWithQuote(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "feed.csv")
 
-	// Row 1: description starts with a double-quote — the triggering pattern.
-	// Row 2: a completely different episode that must NOT be merged into row 1.
 	content := "title\x1fdescription\x1fdate\x1furl\n" +
 		"LONER LEGENDS III\x1f\"LONER LEGENDS III\" is the final episode of Season Five\x1fTue, 17 May 2022 14:00:00 -0000\x1fhttps://example.com/50.mp3\n" +
 		"BONUS EPISODE\x1fRon & Emil recently began a ritual\x1fTue, 14 Jun 2022 14:00:00 -0000\x1fhttps://example.com/51.mp3\n"
@@ -120,7 +113,6 @@ func TestReadDescriptionStartingWithQuote(t *testing.T) {
 		t.Fatalf("expected 2 records, got %d (rows may have been merged)", len(records))
 	}
 
-	// Row 1 must have the correct date — NOT the description of row 2.
 	if records[0].Title != "LONER LEGENDS III" {
 		t.Errorf("record[0].Title = %q; want %q", records[0].Title, "LONER LEGENDS III")
 	}
@@ -131,7 +123,6 @@ func TestReadDescriptionStartingWithQuote(t *testing.T) {
 		t.Errorf("record[0].URL = %q", records[0].URL)
 	}
 
-	// Row 2 must be fully intact and not shifted.
 	if records[1].Title != "BONUS EPISODE" {
 		t.Errorf("record[1].Title = %q; want %q", records[1].Title, "BONUS EPISODE")
 	}
@@ -140,8 +131,8 @@ func TestReadDescriptionStartingWithQuote(t *testing.T) {
 	}
 }
 
-// TestReadTitleStartingWithQuote checks that a title field containing double-quotes
-// (e.g. BONUS EPISODE - "RON GETS FAN MAIL!") is read verbatim.
+// TestReadTitleStartingWithQuote checks a title with double quotes is read
+// as it is.
 func TestReadTitleStartingWithQuote(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "feed.csv")

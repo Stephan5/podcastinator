@@ -112,13 +112,10 @@ func runImport(feedDirAbs, source, slug string, force bool) error {
 	fmt.Printf("Source:   %q\n", cfg.Source)
 	fmt.Printf("Episodes: %d\n\n", len(records))
 
-	switch {
-	case parsed.ImageURL == "":
+	if parsed.ImageURL == "" {
 		fmt.Print("Warning: the source has no cover art; add image.jpg yourself.\n\n")
-	default:
-		if err := saveCoverArt(parsed.ImageURL, filepath.Join(dir, "image.jpg")); err != nil {
-			fmt.Printf("Warning: couldn't save the cover art from %s: %v\n\n", parsed.ImageURL, err)
-		}
+	} else if err := saveCoverArt(parsed.ImageURL, filepath.Join(dir, "image.jpg")); err != nil {
+		fmt.Printf("Warning: couldn't save the cover art from %s: %v\n\n", parsed.ImageURL, err)
 	}
 
 	fmt.Printf("Imported %s. Next:\n", dir)
@@ -129,7 +126,7 @@ func runImport(feedDirAbs, source, slug string, force bool) error {
 }
 
 func newUpdateCmd() *cobra.Command {
-	cmd := &cobra.Command{
+	return &cobra.Command{
 		Use:     "update [feed...]",
 		GroupID: "import",
 		Short:   "Add new episodes from each feed's source",
@@ -167,7 +164,6 @@ Examples:
 			return nil
 		},
 	}
-	return cmd
 }
 
 func updateFeed(f feed) error {
@@ -257,11 +253,10 @@ func httpGet(url string) ([]byte, error) {
 }
 
 // cleanRecords makes parsed episodes safe to store in a CSV, which has no
-// quoting: runs of whitespace, newlines included, and the delimiter become
-// single spaces. Descriptions are stored
-// HTML-escaped, as build writes them into the feed verbatim. Each episode
-// gets a new UUID for its GUID, rather than the source's. Episodes with no
-// audio URL are dropped.
+// quoting, by collapsing whitespace (newlines included) and the delimiter to
+// single spaces. Descriptions are HTML-escaped, as build writes them into the
+// feed verbatim. Each episode gets a new UUID rather than the source's GUID,
+// and episodes with no audio URL are dropped.
 func cleanRecords(records []feedcsv.Record, delim rune) []feedcsv.Record {
 	escape := strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;")
 	clean := func(s string) string {

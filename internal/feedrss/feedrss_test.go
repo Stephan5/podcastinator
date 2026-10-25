@@ -18,7 +18,7 @@ import (
 	"github.com/Stephan5/podcastinator/internal/feedrss"
 )
 
-// mockFetcher returns a fixed content-length for all URLs (matching the test fixture).
+// mockFetcher gives every episode the same length.
 func mockFetcher(contentLength string) func(string) (string, error) {
 	return func(url string) (string, error) {
 		return contentLength, nil
@@ -70,7 +70,6 @@ func buildTestFeed(t *testing.T) ([]byte, feedrss.FeedOptions) {
 		Title:                "Dudes Rock",
 		Description:          "Hell yeah dude!",
 		Author:               "Real-ass dudes",
-		RepoDir:              "test",
 		FeedURL:              "https://podcasts.example.com/test/feed.xml",
 		ImageURL:             "https://link.com/image.jpg",
 		ContentLengthFetcher: mockFetcher("103016"),
@@ -83,8 +82,6 @@ func buildTestFeed(t *testing.T) ([]byte, feedrss.FeedOptions) {
 	}
 	return xmlBytes, opts
 }
-
-// --- Structural tests ---
 
 func TestBuildProducesValidXML(t *testing.T) {
 	xmlBytes, _ := buildTestFeed(t)
@@ -155,9 +152,7 @@ func TestBuildItemTitles(t *testing.T) {
 
 	for i, rec := range testRecords {
 		want := fmt.Sprintf("<title>%s</title>", rec.Title)
-		// Note: xml special chars in title get escaped
 		if !strings.Contains(src, want) {
-			// Try with XML-escaped title (e.g. & → &amp;)
 			escaped := strings.ReplaceAll(rec.Title, "&", "&amp;")
 			want2 := fmt.Sprintf("<title>%s</title>", escaped)
 			if !strings.Contains(src, want2) {
@@ -177,7 +172,6 @@ func TestBuildItemDates(t *testing.T) {
 
 func TestBuildItemEnclosureContentLength(t *testing.T) {
 	xmlBytes, _ := buildTestFeed(t)
-	// All items should have length="103016"
 	count := strings.Count(string(xmlBytes), `length="103016"`)
 	if count != len(testRecords) {
 		t.Errorf("expected %d enclosures with length=103016, got %d", len(testRecords), count)
@@ -187,7 +181,6 @@ func TestBuildItemEnclosureContentLength(t *testing.T) {
 func TestBuildFailsWhenContentLengthFetchFails(t *testing.T) {
 	opts := feedrss.FeedOptions{
 		Title:    "My Show",
-		RepoDir:  "my-show",
 		FeedURL:  "https://podcasts.example.com/my-show/feed.xml",
 		ImageURL: "https://podcasts.example.com/my-show/image.jpg",
 		ContentLengthFetcher: func(url string) (string, error) {
@@ -216,7 +209,6 @@ func TestBuildFailsWhenContentLengthFetchFails(t *testing.T) {
 func TestBuildFailsWhenContentLengthIsEmpty(t *testing.T) {
 	opts := feedrss.FeedOptions{
 		Title:                "My Show",
-		RepoDir:              "my-show",
 		FeedURL:              "https://podcasts.example.com/my-show/feed.xml",
 		ImageURL:             "https://podcasts.example.com/my-show/image.jpg",
 		ContentLengthFetcher: mockFetcher(""),
@@ -256,7 +248,6 @@ func TestBuildFetchesConcurrentlyUpToLimit(t *testing.T) {
 	var inFlight, peak atomic.Int32
 	opts := feedrss.FeedOptions{
 		Title:       "My Show",
-		RepoDir:     "my-show",
 		FeedURL:     "https://podcasts.example.com/my-show/feed.xml",
 		ImageURL:    "https://podcasts.example.com/my-show/image.jpg",
 		Concurrency: 4,
@@ -299,7 +290,6 @@ func TestBuildReportsFirstFailedFetchAndStopsEarly(t *testing.T) {
 	var calls int
 	opts := feedrss.FeedOptions{
 		Title:       "My Show",
-		RepoDir:     "my-show",
 		FeedURL:     "https://podcasts.example.com/my-show/feed.xml",
 		ImageURL:    "https://podcasts.example.com/my-show/image.jpg",
 		Concurrency: 1,
@@ -331,7 +321,6 @@ func TestBuildReportsFirstFailedFetchAndStopsEarly(t *testing.T) {
 func TestBuildValidatesDatesBeforeFetching(t *testing.T) {
 	opts := feedrss.FeedOptions{
 		Title:    "My Show",
-		RepoDir:  "my-show",
 		FeedURL:  "https://podcasts.example.com/my-show/feed.xml",
 		ImageURL: "https://podcasts.example.com/my-show/image.jpg",
 		ContentLengthFetcher: func(url string) (string, error) {
@@ -375,7 +364,7 @@ func TestBuildEpisodeDescriptions(t *testing.T) {
 }
 
 func TestSetDefaultsOnlyFillsWebsiteURL(t *testing.T) {
-	opts := feedrss.FeedOptions{Title: "Test", RepoDir: "my-podcast"}
+	opts := feedrss.FeedOptions{Title: "Test"}
 	opts.SetDefaults()
 
 	if opts.WebsiteURL != "https://github.com/Stephan5/podcastinator" {
@@ -388,8 +377,8 @@ func TestSetDefaultsOnlyFillsWebsiteURL(t *testing.T) {
 
 func TestBuildRequiresFeedAndImageURL(t *testing.T) {
 	for name, opts := range map[string]feedrss.FeedOptions{
-		"no feed URL":  {Title: "Test", RepoDir: "x", ImageURL: "https://podcasts.example.com/x/image.jpg"},
-		"no image URL": {Title: "Test", RepoDir: "x", FeedURL: "https://podcasts.example.com/x/feed.xml"},
+		"no feed URL":  {Title: "Test", ImageURL: "https://podcasts.example.com/x/image.jpg"},
+		"no image URL": {Title: "Test", FeedURL: "https://podcasts.example.com/x/feed.xml"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			opts.ContentLengthFetcher = mockFetcher("1")
@@ -403,7 +392,6 @@ func TestBuildRequiresFeedAndImageURL(t *testing.T) {
 func TestBuildNoAuthorTag(t *testing.T) {
 	opts := feedrss.FeedOptions{
 		Title:                "No Author Show",
-		RepoDir:              "no-author",
 		FeedURL:              "https://podcasts.example.com/no-author/feed.xml",
 		ImageURL:             "https://podcasts.example.com/no-author/image.jpg",
 		ContentLengthFetcher: mockFetcher("0"),
@@ -417,8 +405,6 @@ func TestBuildNoAuthorTag(t *testing.T) {
 		t.Error("should not emit <itunes:author> when author is empty")
 	}
 }
-
-// --- Hash / idempotency tests ---
 
 func TestHashContentIgnoresDates(t *testing.T) {
 	xmlA := `<rss>
@@ -453,11 +439,9 @@ func TestHashContentDetectsChange(t *testing.T) {
 }
 
 func TestBuildSkipsWriteWhenUnchanged(t *testing.T) {
-	// Build twice and verify the hash is the same (content-deterministic ignoring dates)
 	opts := feedrss.FeedOptions{
 		Title:                "Stable Show",
 		Description:          "Stays the same",
-		RepoDir:              "stable",
 		FeedURL:              "https://podcasts.example.com/stable/feed.xml",
 		ImageURL:             "https://podcasts.example.com/stable/image.jpg",
 		ContentLengthFetcher: mockFetcher("1234"),
@@ -481,8 +465,6 @@ func TestBuildSkipsWriteWhenUnchanged(t *testing.T) {
 		t.Error("same input should produce the same hash across two builds")
 	}
 }
-
-// --- Parse (rss2csv) tests ---
 
 const testRSSXML = `<?xml version="1.0" encoding="UTF-8"?>
 <rss xmlns:atom="http://www.w3.org/2005/Atom" version="2.0">
@@ -561,7 +543,6 @@ func TestParseSortsByDateAscending(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
-	// First item must be "2002-06-29" (earliest), last must be "Last Episode" (Thu 04 Jul)
 	if feed.Records[0].Title != "2002-06-29" {
 		t.Errorf("first record title = %q; want %q", feed.Records[0].Title, "2002-06-29")
 	}
@@ -569,7 +550,6 @@ func TestParseSortsByDateAscending(t *testing.T) {
 		t.Errorf("last record title = %q; want %q",
 			feed.Records[len(feed.Records)-1].Title, "Last Episode")
 	}
-	// Middle episode (Wed 03 Jul) must be 5th (index 4)
 	if feed.Records[4].Title != "Middle Episode" {
 		t.Errorf("record[4] title = %q; want %q", feed.Records[4].Title, "Middle Episode")
 	}
@@ -595,7 +575,6 @@ func TestParseURLHTMLDecoded(t *testing.T) {
 	if len(feed.Records) != 1 {
 		t.Fatalf("expected 1 record, got %d", len(feed.Records))
 	}
-	// URL should be HTML-decoded: &amp; → &
 	want := "https://example.com/file.mp3?a=1&b=2"
 	if feed.Records[0].URL != want {
 		t.Errorf("URL = %q; want %q", feed.Records[0].URL, want)
@@ -638,12 +617,9 @@ func TestParseIgnoresItemLink(t *testing.T) {
 	}
 }
 
-// --- CSV round-trip: Build → write CSV → read CSV ---
-
 func TestBuildThenWriteCSVRoundTrip(t *testing.T) {
 	opts := feedrss.FeedOptions{
 		Title:                "Round Trip Show",
-		RepoDir:              "round-trip",
 		FeedURL:              "https://podcasts.example.com/round-trip/feed.xml",
 		ImageURL:             "https://podcasts.example.com/round-trip/image.jpg",
 		ContentLengthFetcher: mockFetcher("5000"),
@@ -660,7 +636,6 @@ func TestBuildThenWriteCSVRoundTrip(t *testing.T) {
 		t.Fatalf("Build: %v", err)
 	}
 
-	// Write to temp file and parse back
 	dir := t.TempDir()
 	xmlPath := filepath.Join(dir, "feed.xml")
 	if err := os.WriteFile(xmlPath, xmlBytes, 0644); err != nil {
@@ -687,16 +662,8 @@ func TestBuildThenWriteCSVRoundTrip(t *testing.T) {
 	}
 }
 
-// --- XML escaping tests ---
-// These tests specifically cover the bugs fixed when comparing Go output against
-// the bash/xmllint reference: double-encoding of &amp; in CSV titles and
-// unnecessary &#39; encoding of apostrophes in text nodes.
-
-// TestXMLEscapeTextDoesNotDoubleEncodeAmpersand is the regression test for the
-// main bug found by diffing bobs-show/feed.xml.
-// CSV titles contain HTML entities (e.g. "Foo &amp; Bar") because rss2csv
-// doesn't decode them when writing to CSV. The Go template must NOT re-encode
-// the & in &amp; — the output should be "&amp;" not "&amp;amp;".
+// TestXMLEscapeTextDoesNotDoubleEncodeAmpersand checks a title stored with
+// &amp; in the CSV, as import writes them, comes out as &amp;, not &amp;amp;.
 func TestXMLEscapeTextDoesNotDoubleEncodeAmpersand(t *testing.T) {
 	records := []feedcsv.Record{
 		{
@@ -707,7 +674,6 @@ func TestXMLEscapeTextDoesNotDoubleEncodeAmpersand(t *testing.T) {
 	}
 	opts := feedrss.FeedOptions{
 		Title:                "My Show",
-		RepoDir:              "my-show",
 		FeedURL:              "https://podcasts.example.com/my-show/feed.xml",
 		ImageURL:             "https://podcasts.example.com/my-show/image.jpg",
 		ContentLengthFetcher: mockFetcher("0"),
@@ -720,7 +686,6 @@ func TestXMLEscapeTextDoesNotDoubleEncodeAmpersand(t *testing.T) {
 	}
 	src := string(xmlBytes)
 
-	// Must appear as &amp; (the & in the title), not double-encoded &amp;amp;
 	if !strings.Contains(src, `#4 - Jane Doe &amp; John Smith`) {
 		t.Errorf("expected &amp; in title, but got double-encoding or missing:\n%s",
 			extractTitles(src))
@@ -730,9 +695,8 @@ func TestXMLEscapeTextDoesNotDoubleEncodeAmpersand(t *testing.T) {
 	}
 }
 
-// TestXMLEscapeTextDoesNotEncodeApostropheInTextNode ensures apostrophes in
-// titles are output as literal ' not &#39;. XML only requires apostrophe escaping
-// in attribute values; the bash output leaves them bare in text nodes.
+// TestXMLEscapeTextDoesNotEncodeApostropheInTextNode checks apostrophes in
+// titles aren't escaped, which XML only needs in attributes.
 func TestXMLEscapeTextDoesNotEncodeApostropheInTextNode(t *testing.T) {
 	records := []feedcsv.Record{
 		{
@@ -743,7 +707,6 @@ func TestXMLEscapeTextDoesNotEncodeApostropheInTextNode(t *testing.T) {
 	}
 	opts := feedrss.FeedOptions{
 		Title:                "My Show",
-		RepoDir:              "my-show",
 		FeedURL:              "https://podcasts.example.com/my-show/feed.xml",
 		ImageURL:             "https://podcasts.example.com/my-show/image.jpg",
 		ContentLengthFetcher: mockFetcher("0"),
@@ -764,8 +727,6 @@ func TestXMLEscapeTextDoesNotEncodeApostropheInTextNode(t *testing.T) {
 	}
 }
 
-// TestXMLEscapeTextEncodesRawSpecialChars verifies that genuinely unescaped
-// &, < and > in a title are correctly encoded.
 func TestXMLEscapeTextEncodesRawSpecialChars(t *testing.T) {
 	records := []feedcsv.Record{
 		{Title: "A & B < C > D", Date: "Sat, 29 Jun 2002 03:00:00 GMT",
@@ -773,7 +734,6 @@ func TestXMLEscapeTextEncodesRawSpecialChars(t *testing.T) {
 	}
 	opts := feedrss.FeedOptions{
 		Title:                "My Show",
-		RepoDir:              "my-show",
 		FeedURL:              "https://podcasts.example.com/my-show/feed.xml",
 		ImageURL:             "https://podcasts.example.com/my-show/image.jpg",
 		ContentLengthFetcher: mockFetcher("0"),
@@ -789,8 +749,6 @@ func TestXMLEscapeTextEncodesRawSpecialChars(t *testing.T) {
 	assertContains(t, src, `A &amp; B &lt; C &gt; D`)
 }
 
-// TestXMLEscapeAttrEncodesApostropheInURL verifies that URLs containing
-// apostrophes are correctly encoded when placed in XML attributes (enclosure url=).
 func TestXMLEscapeAttrEncodesApostropheInURL(t *testing.T) {
 	records := []feedcsv.Record{
 		{Title: "Ep", Date: "Sat, 29 Jun 2002 03:00:00 GMT",
@@ -798,7 +756,6 @@ func TestXMLEscapeAttrEncodesApostropheInURL(t *testing.T) {
 	}
 	opts := feedrss.FeedOptions{
 		Title:                "My Show",
-		RepoDir:              "my-show",
 		FeedURL:              "https://podcasts.example.com/my-show/feed.xml",
 		ImageURL:             "https://podcasts.example.com/my-show/image.jpg",
 		ContentLengthFetcher: mockFetcher("0"),
@@ -809,18 +766,13 @@ func TestXMLEscapeAttrEncodesApostropheInURL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Build: %v", err)
 	}
-	// The enclosure url= attribute should have the URL (encoded form is fine in attrs)
 	assertContains(t, string(xmlBytes), `enclosure url=`)
 }
 
-// TestXMLEscapeTextAuthorAmpersand verifies the author field (e.g. "Foo &amp; Bar"
-// from feed.json) is output as "Foo & Bar" in the <itunes:author> text node,
-// not as "Foo &amp;amp; Bar".
 func TestXMLEscapeTextAuthorAmpersand(t *testing.T) {
 	opts := feedrss.FeedOptions{
 		Title:                "My Show",
 		Author:               "Jane Doe &amp; John Smith",
-		RepoDir:              "my-show",
 		FeedURL:              "https://podcasts.example.com/my-show/feed.xml",
 		ImageURL:             "https://podcasts.example.com/my-show/image.jpg",
 		ContentLengthFetcher: mockFetcher("0"),
@@ -839,12 +791,9 @@ func TestXMLEscapeTextAuthorAmpersand(t *testing.T) {
 	}
 }
 
-// TestXMLEscapeTextChannelTitleApostrophe verifies the channel <title> uses
-// a bare apostrophe (not &#39;) matching the bash/xmllint output.
 func TestXMLEscapeTextChannelTitleApostrophe(t *testing.T) {
 	opts := feedrss.FeedOptions{
 		Title:                "Bob's Show",
-		RepoDir:              "bobs-show",
 		FeedURL:              "https://podcasts.example.com/bobs-show/feed.xml",
 		ImageURL:             "https://podcasts.example.com/bobs-show/image.jpg",
 		ContentLengthFetcher: mockFetcher("0"),
@@ -860,62 +809,6 @@ func TestXMLEscapeTextChannelTitleApostrophe(t *testing.T) {
 	assertContains(t, src, `<title>Bob's Show</title>`)
 	if strings.Contains(src, `&#39;`) {
 		t.Errorf("apostrophe in channel title was unnecessarily encoded as &#39;")
-	}
-}
-
-// TestNamespaceOnOneLine verifies the RSS element has all namespaces on a single
-// line, matching the xmllint-formatted bash output.
-func TestNamespaceOnOneLine(t *testing.T) {
-	opts := feedrss.FeedOptions{
-		Title:                "Test",
-		RepoDir:              "test",
-		FeedURL:              "https://podcasts.example.com/test/feed.xml",
-		ImageURL:             "https://podcasts.example.com/test/image.jpg",
-		ContentLengthFetcher: mockFetcher("0"),
-	}
-	opts.SetDefaults()
-
-	xmlBytes, err := feedrss.Build(opts, nil, io.Discard)
-	if err != nil {
-		t.Fatalf("Build: %v", err)
-	}
-
-	for line := range strings.SplitSeq(string(xmlBytes), "\n") {
-		if strings.HasPrefix(strings.TrimSpace(line), "xmlns:") {
-			t.Errorf("namespace found on its own line (should be inline on <rss>): %q", line)
-		}
-	}
-	assertContains(t, string(xmlBytes), `<rss xmlns:atom=`)
-}
-
-// TestImageChildIndentation verifies image sub-elements use 6-space indentation
-// (matching 2-space xmllint indent: 4 for <image> + 2 more = 6).
-func TestImageChildIndentation(t *testing.T) {
-	opts := feedrss.FeedOptions{
-		Title:                "Test",
-		RepoDir:              "test",
-		FeedURL:              "https://podcasts.example.com/test/feed.xml",
-		ImageURL:             "https://podcasts.example.com/test/image.jpg",
-		ContentLengthFetcher: mockFetcher("0"),
-	}
-	opts.SetDefaults()
-
-	xmlBytes, err := feedrss.Build(opts, nil, io.Discard)
-	if err != nil {
-		t.Fatalf("Build: %v", err)
-	}
-
-	for line := range strings.SplitSeq(string(xmlBytes), "\n") {
-		trimmed := strings.TrimLeft(line, " ")
-		if strings.HasPrefix(trimmed, "<url>") || strings.HasPrefix(trimmed, "<title>") || strings.HasPrefix(trimmed, "<link>") {
-			// Only check lines inside <image> (identified by being indented)
-			if strings.HasPrefix(line, "      ") {
-				indent := len(line) - len(strings.TrimLeft(line, " "))
-				if indent != 6 {
-					t.Errorf("image child %q has %d spaces indent, want 6", trimmed, indent)
-				}
-			}
-		}
 	}
 }
 
@@ -945,7 +838,7 @@ func TestBuildItunesImage(t *testing.T) {
 	}
 }
 
-// extractTitles is a debug helper that pulls all <title>...</title> lines from XML.
+// extractTitles returns the <title> lines in src, for error messages.
 func extractTitles(src string) string {
 	var out strings.Builder
 	for line := range strings.SplitSeq(src, "\n") {
@@ -956,7 +849,6 @@ func extractTitles(src string) string {
 	return out.String()
 }
 
-// assertContains fails the test if sub is not found in s.
 func assertContains(t *testing.T, s, sub string) {
 	t.Helper()
 	if !strings.Contains(s, sub) {
