@@ -12,6 +12,7 @@ Newest first. A release's description on GitHub is its section here.
 
 * **Feeds no longer add text of their own to descriptions.** An episode without a description used to get `<title> - Episode <n> of <show>`, which only repeated what apps show already; now it has none. Every episode's description also ended with a "Generated using Stephan5/podcastinator" link, and the show's description was wrapped in HTML with a line of the same; both are gone, leaving the credit to `<generator>`, which listeners don't see.
 * The show's description is also written as `<itunes:summary>`, which some apps read instead of `<description>`. A show without one gets its title, as RSS requires a description.
+* The cover art is also written as `<itunes:image>`, which Apple requires and most apps look for before RSS's own `<image>`.
 
 ## 0.10.0
 

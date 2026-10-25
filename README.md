@@ -75,7 +75,7 @@ Episodes are numbered in CSV order. The `guid` is what podcast apps identify an 
 | `description` | No       | The show's description, written as `<description>` and `<itunes:summary>`. Defaults to the title. |
 | `author`      | No       | Who makes it.                                                                                  |
 | `website`     | No       | The show's own site, the feed's `<link>`. Defaults to this repo.                               |
-| `image`       | No       | The cover art's URL. Defaults to `<public_url>/<slug>/image.jpg`, from `hosting.json`.         |
+| `image`       | No       | The cover art's URL, written as `<itunes:image>` and `<image>`. Defaults to `<public_url>/<slug>/image.jpg`, from `hosting.json`. |
 | `feed`        | No       | The feed's own URL, its self link. Defaults to `<public_url>/<slug>/feed.xml`, from `hosting.json`. |
 | `delimiter`   | No       | The CSV's field separator. Defaults to the unit separator, `"\u001f"`.                           |
 | `source`      | No       | The RSS feed the episodes came from, which `update` fetches new ones from. Set by `import`.    |

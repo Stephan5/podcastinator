@@ -917,6 +917,32 @@ func TestImageChildIndentation(t *testing.T) {
 	}
 }
 
+// TestBuildItunesImage checks the cover art is in itunes:image, which Apple
+// requires and apps look for first, as well as RSS's own <image>.
+func TestBuildItunesImage(t *testing.T) {
+	const art = "https://podcasts.example.com/test/image.jpg?v=2&size=full"
+	xmlBytes, err := feedrss.Build(feedrss.FeedOptions{
+		Title:    "Test",
+		FeedURL:  "https://podcasts.example.com/test/feed.xml",
+		ImageURL: art,
+	}, nil, io.Discard)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	src := string(xmlBytes)
+	assertContains(t, src, "\n    <itunes:image href=\"https://podcasts.example.com/test/image.jpg?v=2&amp;size=full\"/>\n    <image>\n      <url>")
+	if err := xml.Unmarshal(xmlBytes, new(struct{})); err != nil {
+		t.Errorf("feed isn't valid XML: %v", err)
+	}
+	parsed, err := feedrss.Parse(bytes.NewReader(xmlBytes))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if parsed.ImageURL != art {
+		t.Errorf("parsed ImageURL = %q; want %q", parsed.ImageURL, art)
+	}
+}
+
 // extractTitles is a debug helper that pulls all <title>...</title> lines from XML.
 func extractTitles(src string) string {
 	var out strings.Builder
@@ -1001,8 +1027,8 @@ func TestStampedInputs(t *testing.T) {
 // bumped and feeds built by an older version count as stale. If the change is
 // deliberate, bump FormatVersion and set both constants here to the new values.
 func TestFormatVersion(t *testing.T) {
-	const wantVersion = 3
-	const wantHash = "a9e0f71ee1199021783a041377b5835756c53b9685b0712b19db7af6b926e4b4"
+	const wantVersion = 4
+	const wantHash = "26840a4c15e397a5784e7304b5b5237cb7cc573df1a558edf6f5998d58d31740"
 
 	episodic, _ := buildTestFeed(t)
 	serial, err := feedrss.Build(feedrss.FeedOptions{

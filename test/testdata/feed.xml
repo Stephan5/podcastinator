@@ -9,6 +9,7 @@
     <language>en-gb</language>
     <copyright>none</copyright>
     <link>https://github.com/Stephan5/podcastinator/tree/master/feed/test</link>
+    <itunes:image href="https://link.com/image.jpg"/>
     <image>
       <url>https://link.com/image.jpg</url>
       <title>Dudes Rock</title>
