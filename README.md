@@ -345,13 +345,15 @@ The `publish` and `audio prune` integration tests need an S3 endpoint (`AWS_ENDP
 
 ### Releasing
 
-Set `version` in [`cmd/podcastinator/version.go`](cmd/podcastinator/version.go) and add a section at the top of [`RELEASE_NOTES.md`](RELEASE_NOTES.md), headed `## <version>`, and commit them. Older versions' sections stay below as the history. Once that's on `master`, tag it and push the tag:
+Changes note themselves at the top of [`RELEASE_NOTES.md`](RELEASE_NOTES.md), under `## Unreleased`, as they're merged. Older versions' sections stay below as the history. To release, cut the version on `master`, push it, then tag it and push the tag:
 
 ```shell
-make release   # git tag v<version> && git push origin v<version>
+make cut V=0.10.0   # sets version.go, the README's go install lines and the notes' heading, and commits "cut v0.10.0"
+git push
+make release        # git tag v<version> && git push origin v<version>
 ```
 
-It refuses unless you're on a clean `master` that matches `origin/master`, the version isn't already tagged, and the release notes have its section, so a bad tag never reaches GitHub. Pushing the tag runs the tests, builds binaries for Linux and macOS, and attaches them to a GitHub release with that version's section as its description (see [`release.yml`](.github/workflows/release.yml)). The workflow refuses to release if the tag doesn't match the version, or the release notes have no section for it. Push the tag rather than making the release on GitHub, which would leave the workflow nothing to create.
+`cut` refuses unless `V` is newer than the current version and not yet tagged, you're on a clean `master` that matches `origin/master`, and `## Unreleased` has notes. `release` refuses unless you're on a clean `master` that matches `origin/master`, the version isn't already tagged, and the release notes have its section, so a bad tag never reaches GitHub. Pushing the tag runs the tests, builds binaries for Linux and macOS, and attaches them to a GitHub release with that version's section as its description (see [`release.yml`](.github/workflows/release.yml)). The workflow refuses to release if the tag doesn't match the version, or the release notes have no section for it. Push the tag rather than making the release on GitHub, which would leave the workflow nothing to create.
 
 ## License
 
