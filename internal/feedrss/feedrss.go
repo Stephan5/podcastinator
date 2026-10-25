@@ -103,7 +103,6 @@ var rssTemplate = template.Must(template.New("rss").Funcs(template.FuncMap{
 <rss xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/" xmlns:wfw="http://wellformedweb.org/CommentAPI/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd" xmlns:googleplay="http://www.google.com/schemas/play-podcasts/1.0" xmlns:spotify="http://www.spotify.com/ns/rss" xmlns:podcast="https://podcastindex.org/namespace/1.0" xmlns:media="http://search.yahoo.com/mrss/" version="2.0">
   <channel>
     <atom:link href="{{xmlEscapeAttr .FeedURL}}" rel="self" type="application/rss+xml"/>
-    <itunes:new-feed-url>{{xmlEscape .FeedURL}}</itunes:new-feed-url>
     <title>{{xmlEscape .Title}}</title>
     <description>&lt;p&gt;{{xmlEscape .Description}} &lt;/p&gt;&lt;br/&gt;&lt;p&gt;Generated using {{.Repo}}.&lt;/p&gt;</description>
     {{- if .Author}}

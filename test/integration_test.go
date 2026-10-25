@@ -299,7 +299,6 @@ func TestBuildUsesHostingURLs(t *testing.T) {
 	base := "https://podcasts.example.com/hosted-show/"
 	for _, want := range []string{
 		`<atom:link href="` + base + `feed.xml"`,
-		`<itunes:new-feed-url>` + base + `feed.xml</itunes:new-feed-url>`,
 		`<url>` + base + `image.jpg</url>`,
 		`<!-- podcastinator-inputs: `,
 	} {
