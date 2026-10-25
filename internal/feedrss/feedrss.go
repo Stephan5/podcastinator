@@ -24,6 +24,13 @@ import (
 
 const githubRepo = "Stephan5/podcastinator"
 
+// FormatVersion identifies what Build makes of a given set of inputs. It's
+// part of every feed's inputs hash, so bump it whenever a change alters
+// Build's output: feeds built before the change then count as out of date,
+// and publish refuses them until they're rebuilt. TestFormatVersion fails
+// until it's bumped.
+const FormatVersion = 1
+
 // DefaultConcurrency is how many Content-Length lookups Build makes at once
 // when FeedOptions.Concurrency isn't set.
 const DefaultConcurrency = 16

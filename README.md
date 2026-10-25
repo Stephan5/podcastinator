@@ -150,7 +150,7 @@ If a feed's subscribers are on an old URL, change `hosting.json` (or `feed` in `
 
 ### Publishing from CI
 
-Keep your `feed/` directory in a repo of its own, commit the built `feed.xml` files, and publish on every push. `publish` refuses a feed whose `feed.csv`, `feed.json` or `hosting.json` changed since its `feed.xml` was built, so a push that forgets to rebuild fails rather than publishing a stale feed. With GitHub Actions and an IAM role assumed through GitHub's OIDC provider, no AWS secrets are stored anywhere:
+Keep your `feed/` directory in a repo of its own, commit the built `feed.xml` files, and publish on every push. `publish` refuses a feed whose `feed.csv`, `feed.json` or `hosting.json` changed since its `feed.xml` was built, or since a podcastinator release that builds feeds differently, so a push that forgets to rebuild fails rather than publishing a stale feed. With GitHub Actions and an IAM role assumed through GitHub's OIDC provider, no AWS secrets are stored anywhere:
 
 ```yaml
 jobs:
@@ -274,7 +274,7 @@ podcastinator build example-show another-show     # just these
 podcastinator build --exclude some-feed,another   # all but these
 ```
 
-Writes `feed/<slug>/feed.xml` from its `feed.csv` and `feed.json`. The feed and image URLs come from `feed` and `image` in `feed.json`, then their location in the bucket from `hosting.json`, and it fails if neither supplies them. Gives any episode without a GUID one, writing it to the CSV. Numbers each episode with `itunes:episode`, in CSV order; titles are left as they are in the CSV. Sends a `HEAD` request for each episode to fill in its length, 16 at a time by default; `--concurrency` changes that. Skips writing if the feed hasn't changed. Each `feed.xml` ends with a comment holding a hash of its inputs, which `publish` and `status` check.
+Writes `feed/<slug>/feed.xml` from its `feed.csv` and `feed.json`. The feed and image URLs come from `feed` and `image` in `feed.json`, then their location in the bucket from `hosting.json`, and it fails if neither supplies them. Gives any episode without a GUID one, writing it to the CSV. Numbers each episode with `itunes:episode`, in CSV order; titles are left as they are in the CSV. Sends a `HEAD` request for each episode to fill in its length, 16 at a time by default; `--concurrency` changes that. Skips writing if the feed hasn't changed. Each `feed.xml` ends with a comment holding a hash of its inputs and of the version of build's output format, which `publish` and `status` check; a release that changes what `build` writes bumps that format version, so feeds need rebuilding after upgrading to it.
 
 ### `dates` — reformat dates
 
@@ -318,7 +318,7 @@ podcastinator publish example-show     # just this one
 podcastinator publish --dry-run        # report what would change
 ```
 
-Uploads each feed's `feed.xml` and `image.jpg` to `<prefix>/<slug>/`. Files that already match the bucket by ETag are skipped. Refuses to upload anything if a feed's `feed.xml` is out of date with its `feed.csv`, `feed.json` or `hosting.json`. Never touches episode audio.
+Uploads each feed's `feed.xml` and `image.jpg` to `<prefix>/<slug>/`. Files that already match the bucket by ETag are skipped. Refuses to upload anything if a feed's `feed.xml` is out of date with its `feed.csv`, `feed.json` or `hosting.json`, or was built by a version that builds feeds differently. Never touches episode audio.
 
 ### `status` — what state is everything in
 

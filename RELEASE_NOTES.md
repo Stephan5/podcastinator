@@ -2,6 +2,12 @@
 
 Newest first. A release's description on GitHub is its section here.
 
+## Unreleased
+
+### Changed
+
+* **A feed built by a podcastinator that builds feeds differently counts as out of date**, so `status` shows it as `stale` and `publish` refuses it until it's rebuilt. Before, only changes to `feed.csv`, `feed.json` or `hosting.json` did, so upgrading to a release like 0.9.0 left feeds built the old way looking up to date. Releases that don't change `build`'s output don't make feeds stale. This release counts as a change, so rebuild every feed once after upgrading.
+
 ## 0.9.0
 
 ### Changed
