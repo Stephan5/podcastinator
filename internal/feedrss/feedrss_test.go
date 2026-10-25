@@ -1,6 +1,7 @@
 package feedrss_test
 
 import (
+	"bytes"
 	"encoding/xml"
 	"fmt"
 	"io"
@@ -766,5 +767,101 @@ func assertContains(t *testing.T, s, sub string) {
 	t.Helper()
 	if !strings.Contains(s, sub) {
 		t.Errorf("expected output to contain:\n  %q\nbut it was not found", sub)
+	}
+}
+
+func TestParseItunesMetadata(t *testing.T) {
+	const src = `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Show</title>
+    <link>https://example.com/show</link>
+    <atom:link href="https://feeds.example.com/show.rss" rel="self" type="application/rss+xml"/>
+    <itunes:author>Some Body</itunes:author>
+    <image><url>https://example.com/small.jpg</url></image>
+    <itunes:image href="https://example.com/large.jpg"/>
+  </channel>
+</rss>`
+
+	feed, err := feedrss.Parse(strings.NewReader(src))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if feed.Author != "Some Body" {
+		t.Errorf("Author = %q", feed.Author)
+	}
+	// atom:link comes after <link>, and must not replace it.
+	if feed.Link != "https://example.com/show" {
+		t.Errorf("Link = %q", feed.Link)
+	}
+	// itunes:image is the full-size artwork, so it wins over <image>.
+	if feed.ImageURL != "https://example.com/large.jpg" {
+		t.Errorf("ImageURL = %q", feed.ImageURL)
+	}
+}
+
+func TestStampedInputs(t *testing.T) {
+	opts := feedrss.FeedOptions{
+		Title:                "Test",
+		FeedURL:              "https://podcasts.example.com/test/feed.xml",
+		ImageURL:             "https://podcasts.example.com/test/image.jpg",
+		ContentLengthFetcher: mockFetcher("0"),
+	}
+	unstamped, err := feedrss.Build(opts, testRecords, io.Discard)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	if got := feedrss.StampedInputs(unstamped); got != "" {
+		t.Errorf("StampedInputs of an unstamped feed = %q; want empty", got)
+	}
+
+	opts.InputsHash = "0123abcd"
+	stamped, err := feedrss.Build(opts, testRecords, io.Discard)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	if got := feedrss.StampedInputs(stamped); got != "0123abcd" {
+		t.Errorf("StampedInputs = %q; want %q", got, "0123abcd")
+	}
+	if err := xml.Unmarshal(stamped, new(struct{})); err != nil {
+		t.Errorf("stamped feed isn't valid XML: %v", err)
+	}
+	if feedrss.HashContent(stamped) == feedrss.HashContent(unstamped) {
+		t.Error("the stamp should count as a change, so build rewrites feed.xml when only its inputs changed")
+	}
+}
+
+func TestBuildGUIDs(t *testing.T) {
+	opts := feedrss.FeedOptions{
+		Title:                "Test",
+		FeedURL:              "https://podcasts.example.com/test/feed.xml",
+		ImageURL:             "https://podcasts.example.com/test/image.jpg",
+		ContentLengthFetcher: mockFetcher("0"),
+	}
+	records := []feedcsv.Record{
+		{Title: "Legacy", Date: "Sat, 29 Jun 2002 03:00:00 GMT", URL: "https://example.com/new/1.mp3", GUID: "https://example.com/old/1.mp3"},
+		{Title: "New", Date: "Sun, 30 Jun 2002 03:00:00 GMT", URL: "https://example.com/2.mp3", GUID: "6f1c1e0a-3b5d-4c2e-9f7a-2d8b4e6a1c3f"},
+		{Title: "Unassigned", Date: "Mon, 01 Jul 2002 03:00:00 GMT", URL: "https://example.com/3.mp3?a=1&b=2"},
+	}
+	xmlBytes, err := feedrss.Build(opts, records, io.Discard)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	src := string(xmlBytes)
+	// A URL GUID stays a plain permalink, even once the audio has moved.
+	assertContains(t, src, `<guid>https://example.com/old/1.mp3</guid>`)
+	assertContains(t, src, `<enclosure url="https://example.com/new/1.mp3"`)
+	assertContains(t, src, `<guid isPermaLink="false">6f1c1e0a-3b5d-4c2e-9f7a-2d8b4e6a1c3f</guid>`)
+	// No GUID means the URL, as 0.3.0 wrote it.
+	assertContains(t, src, `<guid>https://example.com/3.mp3?a=1&amp;amp;b=2</guid>`)
+
+	parsed, err := feedrss.Parse(bytes.NewReader(xmlBytes))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	for i, want := range []string{"https://example.com/old/1.mp3", "6f1c1e0a-3b5d-4c2e-9f7a-2d8b4e6a1c3f", "https://example.com/3.mp3?a=1&amp;b=2"} {
+		if parsed.Records[i].GUID != want {
+			t.Errorf("parsed record %d GUID = %q; want %q", i, parsed.Records[i].GUID, want)
+		}
 	}
 }

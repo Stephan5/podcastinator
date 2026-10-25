@@ -6,39 +6,18 @@ import (
 	"strings"
 
 	"github.com/Stephan5/podcastinator/internal/hosting"
-	"github.com/spf13/cobra"
 )
 
-// addHostingFlags registers the --bucket/--region/--prefix overrides for hosting.json.
-func addHostingFlags(cmd *cobra.Command, bucket, region, prefix *string) {
-	cmd.Flags().StringVar(bucket, "bucket", "", "S3 bucket name (overrides hosting.json)")
-	cmd.Flags().StringVar(region, "region", hosting.DefaultRegion, "AWS region (overrides hosting.json)")
-	cmd.Flags().StringVar(prefix, "prefix", "", "S3 key prefix, no leading/trailing slash (overrides hosting.json)")
-}
-
-// resolveHosting loads hosting.json from the feed directory and applies any
-// --bucket/--region/--prefix flags the user set explicitly.
-func resolveHosting(cmd *cobra.Command, feedDirAbs, bucket, region, prefix string) (*hosting.Config, error) {
+// resolveHosting loads hosting.json from the feed directory, which commands
+// that touch the bucket need.
+func resolveHosting(feedDirAbs string) (*hosting.Config, error) {
 	cfg, err := hosting.Load(feedDirAbs)
 	if err != nil {
 		return nil, err
 	}
 	if cfg == nil {
-		cfg = &hosting.Config{}
-	}
-	if cmd.Flags().Changed("bucket") {
-		cfg.Bucket = bucket
-	}
-	if cmd.Flags().Changed("region") || cfg.Region == "" {
-		cfg.Region = region
-	}
-	if cmd.Flags().Changed("prefix") {
-		cfg.Prefix = prefix
-	}
-	cfg.Normalize()
-	if cfg.Bucket == "" {
-		return nil, fmt.Errorf("no bucket configured: add %q to %s or pass --bucket",
-			"bucket", filepath.Join(feedDirAbs, hosting.Filename))
+		return nil, fmt.Errorf("no bucket configured: add %s, or run podcastinator init --bucket <bucket>",
+			filepath.Join(feedDirAbs, hosting.Filename))
 	}
 	return cfg, nil
 }
@@ -56,4 +35,12 @@ func audioContentType(ext string) string {
 		return "audio/wav"
 	}
 	return ""
+}
+
+func isSupportedAudioExt(ext string) bool {
+	return audioContentType(ext) != ""
+}
+
+func isHTTPURL(u string) bool {
+	return strings.HasPrefix(u, "http://") || strings.HasPrefix(u, "https://")
 }

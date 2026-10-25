@@ -1,7 +1,7 @@
 # podcastinator
 ![](https://github.com/Stephan5/podcastinator/actions/workflows/main.yml/badge.svg)
 
-A CLI for building podcast RSS feeds from CSVs and hosting them yourself in S3. Each feed is a directory holding a CSV of episodes and a little metadata. `podcastinator` turns that into a `feed.xml`, can copy the episode audio into your bucket, and publishes the feeds there for any podcast app to subscribe to.
+A CLI for building podcast RSS feeds from CSVs and hosting them yourself in S3. Each feed is a directory holding a CSV of episodes and a little metadata. `podcastinator` can import that from an existing podcast's feed, builds a `feed.xml` from it, can copy the episode audio into your bucket, and publishes the feeds there for any podcast app to subscribe to.
 
 It's handy for archiving shows that are disappearing, stitching together episodes from different sources into one feed, or turning a pile of audio files into something your podcast app understands.
 
@@ -21,7 +21,17 @@ macOS blocks binaries downloaded from the internet that aren't signed. Clear the
 
 ## Quick start
 
-[`example/`](example) is a complete feed directory to copy:
+```shell
+podcastinator init --bucket my-podcast-bucket --public-url https://podcasts.example.com
+podcastinator import https://example.com/podcast.rss   # creates feed/<show>/
+podcastinator audio upload <show>                       # optional: host the audio too
+podcastinator build                                     # builds feed/<show>/feed.xml
+podcastinator publish                                   # subscribe at <public_url>/<show>/feed.xml
+```
+
+`podcastinator status` shows where each feed has got to. Commands look for `./feed` in the current directory; `--feed-dir` points them elsewhere. Commands that take `[feed...]` act on every feed when none are named.
+
+To make a feed by hand rather than importing one, [`example/`](example) is a complete feed directory to copy:
 
 ```
 feed/
@@ -35,17 +45,15 @@ feed/
 ```shell
 cp -r example/feed ./feed
 # edit feed/hosting.json to point at your bucket
-podcastinator regenerate          # builds feed/example-show/feed.xml
-podcastinator publish             # uploads it, then subscribe at <public_url>/example-show/feed.xml
+podcastinator build example-show
+podcastinator publish
 ```
-
-Commands look for `./feed` in the current directory; `--feed-dir` points them elsewhere.
 
 ### The CSV
 
-Columns are `title`, `description`, `date`, `url`, separated by the ASCII unit separator (`\x1F`) by default so titles and descriptions can contain commas and quotes without escaping. There's no quoting at all. Dates must be RFC 2822 (`Mon, 06 Jan 2025 09:00:00 GMT`); `pubdate` converts other formats. An empty description becomes `<title> - Episode <n> of <show>`. Every description ends with a "Generated using Stephan5/podcastinator" link.
+Columns are `title`, `description`, `date`, `url`, `guid`, separated by the ASCII unit separator (`\x1F`) by default so titles and descriptions can contain commas and quotes without escaping. There's no quoting at all. Descriptions are stored HTML-escaped (`&lt;p&gt;`), as they go into the feed verbatim. Dates must be RFC 2822 (`Mon, 06 Jan 2025 09:00:00 GMT`); `dates` converts other formats. An empty description becomes `<title> - Episode <n> of <show>`. Every description ends with a "Generated using Stephan5/podcastinator" link.
 
-Episodes are numbered in CSV order, and each episode's URL is its GUID, so changing an episode's URL makes podcast apps treat it as a new episode.
+Episodes are numbered in CSV order. The `guid` is what podcast apps identify an episode by, so it must never change. Leave it empty on a new row and `build` fills it in with a UUID; after that, the episode's URL can change (say, when `audio upload` moves it into your bucket) without apps seeing it as new. CSVs without the column still work, and `build` adds it. Episodes already published before the column existed keep their URL as their GUID, taken from the existing `feed.xml`, so subscribers don't see them again.
 
 ### `feed.json`
 
@@ -67,8 +75,7 @@ Episodes are numbered in CSV order, and each episode's URL is its GUID, so chang
 | `image`       | No       | The cover art's URL. Defaults to `<public_url>/<slug>/image.jpg`, from `hosting.json`.         |
 | `feed`        | No       | The feed's own URL, its self link. Defaults to `<public_url>/<slug>/feed.xml`, from `hosting.json`. |
 | `delimiter`   | No       | The CSV's field separator. Defaults to the unit separator, `"\u001f"`.                           |
-
-Flags passed to `csv2rss` override any of them.
+| `source`      | No       | The RSS feed the episodes came from, which `update` fetches new ones from. Set by `import`.    |
 
 ## Hosting
 
@@ -82,7 +89,7 @@ Hosting is configured once, in `feed/hosting.json`:
 }
 ```
 
-`public_url` is the address that serves the bucket root, and defaults to `https://s3.<region>.amazonaws.com/<bucket>`. It applies to feeds, cover art and the index files. Episode audio uploaded by `selfhost` keeps its S3 URL, because that URL is the episode's GUID. The optional `prefix` puts everything under an S3 key prefix (default none). The `--bucket`, `--region` and `--prefix` flags override the file.
+`public_url` is the address that serves the bucket root, and defaults to `https://s3.<region>.amazonaws.com/<bucket>`. It applies to feeds, cover art and the index files. Episode audio uploaded by `audio upload` is served from its S3 URL. The optional `prefix` puts everything under an S3 key prefix (default none). `podcastinator init --bucket <bucket>` writes the file for you.
 
 The bucket ends up laid out as:
 
@@ -93,7 +100,7 @@ The bucket ends up laid out as:
   <feed>/
     feed.xml
     image.jpg
-    001-episode-title.mp3  ← uploaded by selfhost
+    001-episode-title.mp3  ← uploaded by audio upload
 ```
 
 Objects need to be publicly readable, which is simplest with a bucket policy granting `s3:GetObject` on `arn:aws:s3:::<bucket>/*`.
@@ -115,11 +122,11 @@ Then set `public_url` to `https://<domain>`. `publish` checks that `<public_url>
 
 ### Moving a feed
 
-If a feed's subscribers are on an old URL, run `publish` first so the feed exists at its new home, then `regenerate`. Every generated feed carries `<itunes:new-feed-url>` pointing at its own feed URL, so if the old URL keeps serving the regenerated feed for a few weeks, apps that honour the tag move over on their own ([Apple: change the RSS feed URL](https://podcasters.apple.com/support/837-change-the-rss-feed-url)).
+If a feed's subscribers are on an old URL, change `hosting.json` (or `feed` in `feed.json`), `build` and `publish`. Every generated feed carries `<itunes:new-feed-url>` pointing at its own feed URL, so if the old URL keeps serving the rebuilt feed for a few weeks, apps that honour the tag move over on their own ([Apple: change the RSS feed URL](https://podcasters.apple.com/support/837-change-the-rss-feed-url)).
 
 ### Publishing from CI
 
-Keep your `feed/` directory in a repo of its own and publish on every push. With GitHub Actions and an IAM role assumed through GitHub's OIDC provider, no AWS secrets are stored anywhere:
+Keep your `feed/` directory in a repo of its own, commit the built `feed.xml` files, and publish on every push. `publish` refuses a feed whose `feed.csv`, `feed.json` or `hosting.json` changed since its `feed.xml` was built, so a push that forgets to rebuild fails rather than publishing a stale feed. With GitHub Actions and an IAM role assumed through GitHub's OIDC provider, no AWS secrets are stored anywhere:
 
 ```yaml
 jobs:
@@ -137,7 +144,7 @@ jobs:
         with:
           role-to-assume: ${{ vars.PUBLISH_ROLE_ARN }}
           aws-region: eu-west-2
-      - run: go install github.com/Stephan5/podcastinator/cmd/podcastinator@v0.3.0
+      - run: go install github.com/Stephan5/podcastinator/cmd/podcastinator@v0.4.0
       - run: podcastinator publish
 ```
 
@@ -204,77 +211,103 @@ Give the role an inline policy that can only touch the feed files and the index,
 
 ## Commands
 
-### `regenerate` — rebuild feeds
+| Job       | Command                                      | Does                                                                  |
+|-----------|----------------------------------------------|-----------------------------------------------------------------------|
+| Set up    | `init [--bucket b --public-url u]`           | Creates `feed/` and `hosting.json`                                    |
+| Import    | `import <url\|file> [--slug s] [--force]`    | Creates a feed from an existing podcast's RSS feed                    |
+|           | `update [feed...]`                           | Adds new episodes from each feed's `source`                           |
+| Generate  | `build [feed...] [--exclude a,b]`            | Builds `feed.xml` from `feed.csv` and `feed.json`                     |
+|           | `dates <feed> --from <format>`               | Rewrites a hand-written CSV's dates as RFC 2822                       |
+| Self-host | `audio upload <feed>`                        | Copies a feed's episodes into the bucket and points its CSV at them   |
+|           | `audio prune <feed> [--delete]`              | Finds audio in the bucket the CSV no longer points at                 |
+|           | `audio download <feed> <dir>`                | Downloads a feed's episodes for safekeeping                           |
+|           | `publish [feed...] [--dry-run]`              | Uploads feeds, cover art and the index to the bucket                  |
+|           | `status [feed...] [--remote]`                | Shows where each feed is between import and publish                   |
+
+`podcastinator <command> --help` has the details.
+
+### `import` — start a feed from an existing podcast
 
 ```shell
-podcastinator regenerate                                  # every feed
-podcastinator regenerate --feed example-show              # one feed
-podcastinator regenerate --exclude "some-feed,another"    # all but these
-podcastinator regenerate --feed-dir ./somewhere/feed
+podcastinator import https://example.com/podcast.rss
+podcastinator import ~/Downloads/show.xml --slug my-show
 ```
 
-Runs `csv2rss` on every `feed/<slug>/feed.csv` that has a `feed.json` alongside it.
+Fetches the feed and writes `feed/<slug>/feed.csv` (oldest episode first), `feed.json` (title, description, author, website and `source`) and `image.jpg`, preferring `itunes:image` and converting PNGs to JPEG. Every episode gets a new UUID as its GUID. The slug comes from the show's title unless `--slug` says otherwise. It won't overwrite an existing feed without `--force`, which gives every episode a new GUID, so subscribers would see them all again.
 
-### `csv2rss` — CSV → RSS
+### `update` — pick up new episodes
 
 ```shell
-podcastinator csv2rss ./feed/example-show/feed.csv
-podcastinator csv2rss ./feed/example-show/feed.csv --title "Override Title"
+podcastinator update               # every feed with a source
+podcastinator update example-show
 ```
 
-Writes `feed.xml` alongside the CSV, using `feed.json` from the same directory; flags override it. The feed and image URLs come from `--feed-url`/`--image-url`, then `feed` and `image` in `feed.json`, then their location in the bucket from `hosting.json`, and it fails if none of those supplies them. The website link comes from `--website`, then `website` in `feed.json`, and defaults to this repo. Sends a `HEAD` request for each episode to fill in its length. Skips writing if the feed content hasn't changed.
+Re-fetches each feed's `source` and appends the episodes dated after the newest one in its CSV. It matches on date rather than URL, because self-hosted episodes no longer have their source URLs. Run `audio upload` and `build` afterwards.
 
-### `rss2csv` — RSS → CSV
+### `build` — CSV → RSS
 
 ```shell
-podcastinator rss2csv ./feed/example-show/feed.xml            # input already in feed/<slug>/
-podcastinator rss2csv ~/Downloads/show.xml --repo-dir my-show # input anywhere else
+podcastinator build                               # every feed
+podcastinator build example-show another-show     # just these
+podcastinator build --exclude some-feed,another   # all but these
 ```
 
-Parses an existing feed and writes `feed/<slug>/feed.csv`, sorted by publication date, overwriting any CSV already there. It prints the source feed's title, description, link and image URL to help you write `feed.json`. Override the feed directory with `--feed-dir`.
+Writes `feed/<slug>/feed.xml` from its `feed.csv` and `feed.json`. The feed and image URLs come from `feed` and `image` in `feed.json`, then their location in the bucket from `hosting.json`, and it fails if neither supplies them. Gives any episode without a GUID one, writing it to the CSV. Sends a `HEAD` request for each episode to fill in its length. Skips writing if the feed hasn't changed. Each `feed.xml` ends with a comment holding a hash of its inputs, which `publish` and `status` check.
 
-### `selfhost` — copy episodes into the bucket
+### `dates` — reformat dates
 
 ```shell
-podcastinator selfhost example-show
-podcastinator selfhost example-show --bucket another-bucket --region us-east-1 --prefix rss
+podcastinator dates example-show --from "%b %d, %Y"
 ```
 
-Downloads each episode that isn't already in the bucket, uploads it to `<prefix>/<slug>/` with a numbered, slugified name (`001-episode-title.mp3`) and an audio `Content-Type`, and rewrites the CSV with the new URLs. Since URLs are GUIDs, do this before anyone subscribes, or they'll see every episode again.
+Parses the CSV's date column with a strftime format and rewrites it as RFC 2822. Backs up the original to `feed.csv.old`.
 
-### `selfhost-orphans` — find unreferenced audio
+### `audio upload` — copy episodes into the bucket
 
 ```shell
-podcastinator selfhost-orphans example-show --fail-on-orphans --delete-orphans
+podcastinator audio upload example-show
 ```
 
-Compares the objects under `<prefix>/<slug>/` with the URLs in the CSV and reports, and optionally deletes, files nothing points at. `feed.xml` and `image.jpg` are never orphans. Exits `2` when orphans are found and `--fail-on-orphans` is set.
+Downloads each episode that isn't already in the bucket, uploads it to `<prefix>/<slug>/` with a numbered, slugified name (`001-episode-title.mp3`) and an audio `Content-Type`, and rewrites the CSV with the new URLs. Local `file://` URLs, relative to the feed directory, are uploaded directly. Episodes keep their GUIDs, so subscribers don't see moved episodes as new.
+
+### `audio prune` — find unreferenced audio
+
+```shell
+podcastinator audio prune example-show                     # report
+podcastinator audio prune example-show --delete            # and delete
+podcastinator audio prune example-show --fail-on-orphans   # exit 2 if any
+```
+
+Compares the objects under `<prefix>/<slug>/` with the URLs in the CSV and reports, and with `--delete` deletes, files nothing points at. `feed.xml` and `image.jpg` are never orphans.
+
+### `audio download` — keep a local copy
+
+```shell
+podcastinator audio download example-show ./archive
+```
+
+Downloads all episode audio to `archive/example-show/items/`, copies the feed's files alongside, and writes a `local.csv` with `file://items/<filename>` URLs.
 
 ### `publish` — upload feeds
 
 ```shell
-podcastinator publish                     # every feed
-podcastinator publish --feed example-show # one feed
-podcastinator publish --dry-run           # report what would change
+podcastinator publish                  # every feed
+podcastinator publish example-show     # just this one
+podcastinator publish --dry-run        # report what would change
 ```
 
-Uploads each feed's `feed.xml` and `image.jpg` to `<prefix>/<slug>/`, then writes `index.json` and `podcasts.opml` to the bucket root, always covering every feed. Files that already match the bucket by ETag are skipped. Uploads `feed.xml` as it is on disk, so run `regenerate` first after changing a CSV.
+Uploads each feed's `feed.xml` and `image.jpg` to `<prefix>/<slug>/`, then writes `index.json` and `podcasts.opml` to the bucket root, always covering every feed. Files that already match the bucket by ETag are skipped. Refuses to upload anything if a feed's `feed.xml` is out of date with its `feed.csv`, `feed.json` or `hosting.json`. Never touches episode audio.
 
-### `archive` — download a feed's episodes
+### `status` — what state is everything in
 
-```shell
-podcastinator archive ./feed/example-show ./archive
+```
+$ podcastinator status
+FEED           EPISODES   LATEST                 BUILT   AUDIO            SOURCE
+another-show   214        2024-11-02T06:00:00Z   stale   214/214 hosted   yes
+example-show   2          2025-01-13T09:00:00Z   ok      0/2 hosted       -
 ```
 
-Downloads all episode audio to `archive/example-show/items/` and writes a `local.csv` with `file://items/<filename>` URLs.
-
-### `pubdate` — reformat dates
-
-```shell
-podcastinator pubdate ./feed/example-show/feed.csv --input-format "%b %d, %Y"
-```
-
-Parses the date column with a strftime format and rewrites it as RFC 2822. Backs up the original to `.old`.
+`BUILT` is `ok`, `stale` (rebuild it) or `missing`. `--remote` adds a `PUBLISHED` column comparing the local `feed.xml` and `image.jpg` with the bucket's, which needs AWS credentials.
 
 ## Development
 
@@ -284,7 +317,9 @@ make test-integration   # build the binary and run the black-box tests in test/
 make test-all           # both
 ```
 
-The `publish` integration tests need an S3 endpoint (`AWS_ENDPOINT_URL`) and skip without one. CI runs them against [SeaweedFS](https://github.com/seaweedfs/seaweedfs); see `.github/workflows/main.yml` to do the same locally.
+`TestImportFixture` imports [`test/testdata/import/source.xml`](test/testdata/import/source.xml), a feed shaped like a third-party host's, and compares the result with the files in `want/`; add a case by editing the source and the expected files together.
+
+The `publish` and `audio prune` integration tests need an S3 endpoint (`AWS_ENDPOINT_URL`) and skip without one. CI runs them against [SeaweedFS](https://github.com/seaweedfs/seaweedfs); see `.github/workflows/main.yml` to do the same locally.
 
 ### Releasing
 

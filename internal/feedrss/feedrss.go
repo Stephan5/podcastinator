@@ -9,6 +9,7 @@ import (
 	"html"
 	"io"
 	"net/http"
+	"regexp"
 	"sort"
 	"strings"
 	"text/template"
@@ -30,6 +31,10 @@ type FeedOptions struct {
 	ImageURL    string
 	FeedURL     string
 	RepoDir     string // subdirectory name under feed/
+
+	// InputsHash, if set, is stamped into the feed (see StampInputs) so
+	// publish can tell whether feed.xml is up to date with its inputs.
+	InputsHash string
 
 	// ContentLengthFetcher is called to retrieve the Content-Length for each episode
 	// URL. If nil, an HTTP HEAD request is used. Override in tests.
@@ -103,7 +108,7 @@ var rssTemplate = template.Must(template.New("rss").Funcs(template.FuncMap{
     {{- range .Items}}
     <item>
       <link>{{xmlEscapeAttr .Link}}</link>
-      <guid>{{xmlEscapeAttr .Link}}</guid>
+      <guid{{if not .PermaLink}} isPermaLink="false"{{end}}>{{xmlEscapeAttr .GUID}}</guid>
       <title>{{xmlEscape .Title}}</title>
       <description>{{.Description}}</description>
       <pubDate>{{.PubDate}}</pubDate>
@@ -112,6 +117,9 @@ var rssTemplate = template.Must(template.New("rss").Funcs(template.FuncMap{
     {{- end}}
   </channel>
 </rss>
+{{- if .InputsHash}}
+<!-- podcastinator-inputs: {{.InputsHash}} -->
+{{- end}}
 `))
 
 type rssTemplateData struct {
@@ -123,6 +131,7 @@ type rssTemplateData struct {
 	FeedURL     string
 	Repo        string
 	BuildDate   string
+	InputsHash  string
 	Items       []rssItem
 }
 
@@ -131,6 +140,8 @@ type rssItem struct {
 	Description string
 	PubDate     string
 	Link        string
+	GUID        string
+	PermaLink   bool
 	Length      string
 	MimeType    string
 }
@@ -206,11 +217,22 @@ func Build(opts FeedOptions, records []feedcsv.Record, logger io.Writer) ([]byte
 		}
 		mimeType := urlutil.MimeTypeForExtension(ext)
 
+		// Episodes published before GUIDs were stored used their URL, and
+		// keep it, written exactly as it was. Those are still URLs, so they
+		// stay permalinks; anything else (a UUID) isn't one.
+		guid := rec.GUID
+		if guid == "" {
+			guid = htmlURL
+		}
+		permaLink := strings.HasPrefix(guid, "http://") || strings.HasPrefix(guid, "https://")
+
 		items = append(items, rssItem{
 			Title:       fmt.Sprintf("%d: %s", num, rec.Title),
 			Description: desc,
 			PubDate:     rec.Date,
 			Link:        htmlURL,
+			GUID:        guid,
+			PermaLink:   permaLink,
 			Length:      length,
 			MimeType:    mimeType,
 		})
@@ -226,6 +248,7 @@ func Build(opts FeedOptions, records []feedcsv.Record, logger io.Writer) ([]byte
 		FeedURL:     opts.FeedURL,
 		Repo:        githubRepo,
 		BuildDate:   buildDate,
+		InputsHash:  opts.InputsHash,
 		Items:       items,
 	}
 
@@ -265,7 +288,21 @@ func HashContent(xmlBytes []byte) string {
 	return fmt.Sprintf("%x", h.Sum(nil))
 }
 
-// --- RSS Parsing (for rss2csv) ---
+var inputsStamp = regexp.MustCompile(`<!-- podcastinator-inputs: ([0-9a-f]+) -->`)
+
+// StampedInputs returns the inputs hash that Build stamped into a feed, or ""
+// if it has none (a feed built before stamping, or by something else).
+func StampedInputs(xmlBytes []byte) string {
+	m := inputsStamp.FindSubmatch(xmlBytes)
+	if m == nil {
+		return ""
+	}
+	return string(m[1])
+}
+
+// --- RSS Parsing (for import) ---
+
+const itunesNS = "http://www.itunes.com/dtds/podcast-1.0.dtd"
 
 type rssDoc struct {
 	XMLName xml.Name   `xml:"rss"`
@@ -275,13 +312,24 @@ type rssDoc struct {
 type rssChannel struct {
 	Title       string       `xml:"title"`
 	Description string       `xml:"description"`
-	Link        string       `xml:"link"`
-	Image       rssImage     `xml:"image"`
+	Author      string       `xml:"http://www.itunes.com/dtds/podcast-1.0.dtd author"`
+	Links       []rssLink    `xml:"link"`
+	Images      []rssImage   `xml:"image"`
 	Items       []rssDocItem `xml:"item"`
 }
 
+// rssLink matches <link> in any namespace, so atom:link (whose text is
+// empty) can be told apart from the channel's own <link>.
+type rssLink struct {
+	XMLName xml.Name
+	Value   string `xml:",chardata"`
+}
+
+// rssImage matches both <image><url>…</url></image> and <itunes:image href="…"/>.
 type rssImage struct {
-	URL string `xml:"url"`
+	XMLName xml.Name
+	URL     string `xml:"url"`
+	Href    string `xml:"href,attr"`
 }
 
 type rssDocItem struct {
@@ -303,6 +351,7 @@ type rssEnclosure struct {
 type ParsedFeed struct {
 	Title       string
 	Description string
+	Author      string
 	Link        string
 	ImageURL    string
 	Records     []feedcsv.Record
@@ -322,10 +371,26 @@ func Parse(r io.Reader) (*ParsedFeed, error) {
 
 	ch := doc.Channel
 	feed := &ParsedFeed{
-		Title:       ch.Title,
-		Description: ch.Description,
-		Link:        ch.Link,
-		ImageURL:    ch.Image.URL,
+		Title:       strings.TrimSpace(ch.Title),
+		Description: strings.TrimSpace(ch.Description),
+		Author:      strings.TrimSpace(ch.Author),
+	}
+	for _, l := range ch.Links {
+		if l.XMLName.Space == "" && strings.TrimSpace(l.Value) != "" {
+			feed.Link = strings.TrimSpace(l.Value)
+			break
+		}
+	}
+	// Prefer itunes:image, which Apple requires to be the full-size artwork.
+	for _, img := range ch.Images {
+		if img.XMLName.Space == itunesNS && img.Href != "" {
+			feed.ImageURL = strings.TrimSpace(img.Href)
+		}
+	}
+	for _, img := range ch.Images {
+		if feed.ImageURL == "" && img.URL != "" {
+			feed.ImageURL = strings.TrimSpace(img.URL)
+		}
 	}
 
 	type itemWithTime struct {
@@ -353,6 +418,7 @@ func Parse(r io.Reader) (*ParsedFeed, error) {
 				Description: item.Description,
 				Date:        item.PubDate,
 				URL:         decodedURL,
+				GUID:        strings.TrimSpace(item.GUID),
 			},
 			t: t,
 		})

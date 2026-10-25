@@ -4,8 +4,12 @@
 package integration
 
 import (
+	"bytes"
 	"context"
+	"encoding/xml"
 	"fmt"
+	"image"
+	_ "image/jpeg"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -96,44 +100,59 @@ func writeHosting(t *testing.T, feedRoot string) {
 		[]byte(`{"bucket":"my-bucket","region":"eu-west-2","public_url":"https://podcasts.example.com"}`), 0644)
 }
 
-// --- csv2rss integration tests ---
+// writeFeed writes feedRoot/slug/feed.json and feed.csv, whose rows are
+// joined with the unit separator.
+func writeFeed(t *testing.T, feedRoot, slug, feedJSON string, rows ...string) string {
+	t.Helper()
+	dir := filepath.Join(feedRoot, slug)
+	os.MkdirAll(dir, 0755)
+	os.WriteFile(filepath.Join(dir, "feed.json"), []byte(feedJSON), 0644)
+	csv := "title\x1fdescription\x1fdate\x1furl\n"
+	for _, row := range rows {
+		csv += row + "\n"
+	}
+	os.WriteFile(filepath.Join(dir, "feed.csv"), []byte(csv), 0644)
+	return dir
+}
 
-// TestCSV2RSSGoldenSnapshot build RSS from the test CSV and compare its parsed content
-// against test/testdata/feed.xml.
+// episode is a feed.csv row with no description.
+func episode(title, date, url string) string {
+	return title + "\x1f\x1f" + date + "\x1f" + url
+}
+
+// --- build integration tests ---
+
+// TestBuildGoldenSnapshot builds RSS from the test CSV and compares its parsed
+// content against test/testdata/feed.xml.
 // Comparison is semantic (title, date, URL per item) so XML formatting differences
 // between the Go template and the legacy xmllint output do not cause false failures.
-func TestCSV2RSSGoldenSnapshot(t *testing.T) {
+func TestBuildGoldenSnapshot(t *testing.T) {
 	audio := audioServer(t)
-	dir := t.TempDir()
-	feedDir := filepath.Join(dir, "feed", "test")
-	os.MkdirAll(feedDir, 0755)
-	writeHosting(t, filepath.Dir(feedDir))
-	csvPath := filepath.Join(feedDir, "test.csv")
+	feedRoot := t.TempDir()
+	writeHosting(t, feedRoot)
 
-	// Write the exact input CSV from the bash test (unit separator delimiter).
+	// The exact input CSV from the bash test (unit separator delimiter).
 	delim := "\x1f"
-	lines := []string{
-		"title" + delim + "description" + delim + "date" + delim + "url",
-		"2002-06-29" + delim + "" + delim + "Sat, 29 Jun 2002 03:00:00 GMT" + delim + audio + "/ep.mp3?id=1",
-		"S01E01" + delim + "&lt;p&gt;You're the one that's sad and lonely!&lt;/p&gt;" + delim + "Sun, 30 June 2002 19:07:00 +0100" + delim + audio + "/ep.mp3?id=2",
-		"Ep. 1 - The Pilot" + delim + `&lt;a href="https://example.com/shows/ep-1-the-pilot" rel="nofollow noopener" target="_blank"&gt;May 11, 2016&lt;/a&gt;&lt;p&gt;Two friends sit down and start a podcast. This one is different from other podcasts where two people talk about people you don't know. We get real. We take this seriously.&lt;/p&gt;&lt;p&gt;&lt;strong&gt;Tags&lt;/strong&gt;&lt;/p&gt;&lt;ul&gt; &lt;li&gt;&lt;a href="https://example.com/tags/cooking/" rel="nofollow noopener" target="_blank"&gt;cooking&lt;/a&gt;&lt;/li&gt; &lt;li&gt;&lt;a href="https://example.com/tags/gardening/" rel="nofollow noopener" target="_blank"&gt;gardening&lt;/a&gt;&lt;/li&gt; &lt;li&gt;&lt;a href="https://example.com/tags/storytelling/" rel="nofollow noopener" target="_blank"&gt;storytelling&lt;/a&gt;&lt;/li&gt; &lt;li&gt;&lt;a href="https://example.com/tags/comedy/" rel="nofollow noopener" target="_blank"&gt;comedy&lt;/a&gt;&lt;/li&gt; &lt;li&gt;&lt;a href="https://example.com/tags/politics/" rel="nofollow noopener" target="_blank"&gt;politics&lt;/a&gt;&lt;/li&gt;&lt;/ul&gt;` + delim + "Mon, 01 July 2002 20:33:05 GMT" + delim + audio + "/ep.mp3?id=3",
-		"Inaugral Business" + delim + "" + delim + "Tue, 02 July 2002 03:00:00 GMT" + delim + audio + "/ep.mp3?id=4",
-		"Part 1: The Power of Gentleness" + delim + "&lt;p&gt;Gentle managers, unofficial tractors, cheap lobster and black dogs are covered in the first episode of this football podcast with Bob Mortimer and Andy Dawson.&lt;/p&gt;" + delim + "Wed, 03 July 2002 18:50:00 GMT" + delim + audio + "/ep.mp3?id=5",
-		"2006 01 03 - Tuesday" + delim + "" + delim + "Thu, 04 July 2002 03:00:00 GMT" + delim + audio + "/ep.mp3?id=6",
-	}
-	os.WriteFile(csvPath, []byte(strings.Join(lines, "\n")+"\n"), 0644)
-
-	out, code := run("csv2rss", csvPath,
-		"--title", "Dudes Rock",
-		"--description", "Hell yeah dude!",
-		"--author", "Real-ass dudes",
-		"--image-url", "https://link.com/image.jpg",
+	feedDir := writeFeed(t, feedRoot, "test", `{
+		"title": "Dudes Rock",
+		"description": "Hell yeah dude!",
+		"author": "Real-ass dudes",
+		"image": "https://link.com/image.jpg"
+	}`,
+		"2002-06-29"+delim+""+delim+"Sat, 29 Jun 2002 03:00:00 GMT"+delim+audio+"/ep.mp3?id=1",
+		"S01E01"+delim+"&lt;p&gt;You're the one that's sad and lonely!&lt;/p&gt;"+delim+"Sun, 30 June 2002 19:07:00 +0100"+delim+audio+"/ep.mp3?id=2",
+		"Ep. 1 - The Pilot"+delim+`&lt;a href="https://example.com/shows/ep-1-the-pilot" rel="nofollow noopener" target="_blank"&gt;May 11, 2016&lt;/a&gt;&lt;p&gt;Two friends sit down and start a podcast. This one is different from other podcasts where two people talk about people you don't know. We get real. We take this seriously.&lt;/p&gt;&lt;p&gt;&lt;strong&gt;Tags&lt;/strong&gt;&lt;/p&gt;&lt;ul&gt; &lt;li&gt;&lt;a href="https://example.com/tags/cooking/" rel="nofollow noopener" target="_blank"&gt;cooking&lt;/a&gt;&lt;/li&gt; &lt;li&gt;&lt;a href="https://example.com/tags/gardening/" rel="nofollow noopener" target="_blank"&gt;gardening&lt;/a&gt;&lt;/li&gt; &lt;li&gt;&lt;a href="https://example.com/tags/storytelling/" rel="nofollow noopener" target="_blank"&gt;storytelling&lt;/a&gt;&lt;/li&gt; &lt;li&gt;&lt;a href="https://example.com/tags/comedy/" rel="nofollow noopener" target="_blank"&gt;comedy&lt;/a&gt;&lt;/li&gt; &lt;li&gt;&lt;a href="https://example.com/tags/politics/" rel="nofollow noopener" target="_blank"&gt;politics&lt;/a&gt;&lt;/li&gt;&lt;/ul&gt;`+delim+"Mon, 01 July 2002 20:33:05 GMT"+delim+audio+"/ep.mp3?id=3",
+		"Inaugral Business"+delim+""+delim+"Tue, 02 July 2002 03:00:00 GMT"+delim+audio+"/ep.mp3?id=4",
+		"Part 1: The Power of Gentleness"+delim+"&lt;p&gt;Gentle managers, unofficial tractors, cheap lobster and black dogs are covered in the first episode of this football podcast with Bob Mortimer and Andy Dawson.&lt;/p&gt;"+delim+"Wed, 03 July 2002 18:50:00 GMT"+delim+audio+"/ep.mp3?id=5",
+		"2006 01 03 - Tuesday"+delim+""+delim+"Thu, 04 July 2002 03:00:00 GMT"+delim+audio+"/ep.mp3?id=6",
 	)
+
+	out, code := run("build", "test", "--feed-dir", feedRoot)
 	if code != 0 {
-		t.Fatalf("csv2rss exited %d:\n%s", code, out)
+		t.Fatalf("build exited %d:\n%s", code, out)
 	}
 
-	actualXML, err := os.ReadFile(filepath.Join(feedDir, "test.xml"))
+	actualXML, err := os.ReadFile(filepath.Join(feedDir, "feed.xml"))
 	if err != nil {
 		t.Fatalf("output XML not found: %v", err)
 	}
@@ -150,6 +169,9 @@ func TestCSV2RSSGoldenSnapshot(t *testing.T) {
 	// Channel-level checks.
 	if actual.title != golden.title {
 		t.Errorf("channel title: got %q; want %q", actual.title, golden.title)
+	}
+	if !strings.Contains(string(actualXML), "<itunes:author>Real-ass dudes</itunes:author>") {
+		t.Errorf("author from feed.json not in output")
 	}
 
 	// Structural check: lastBuildDate and pubDate must be present and non-empty.
@@ -178,20 +200,16 @@ func TestCSV2RSSGoldenSnapshot(t *testing.T) {
 	}
 }
 
-func TestCSV2RSSLastBuildDateFormat(t *testing.T) {
+func TestBuildLastBuildDateFormat(t *testing.T) {
 	audio := audioServer(t)
-	dir := t.TempDir()
-	feedDir := filepath.Join(dir, "feed", "myshow")
-	os.MkdirAll(feedDir, 0755)
-	writeHosting(t, filepath.Dir(feedDir))
-	csvPath := filepath.Join(feedDir, "feed.csv")
-	os.WriteFile(csvPath, []byte("title\x1fdescription\x1fdate\x1furl\n"+
-		"Ep1\x1f\x1fSat, 29 Jun 2002 03:00:00 GMT\x1f"+audio+"/ep.mp3?id=1\n"),
-		0644)
+	feedRoot := t.TempDir()
+	writeHosting(t, feedRoot)
+	feedDir := writeFeed(t, feedRoot, "myshow", `{"title":"My Show"}`,
+		episode("Ep1", "Sat, 29 Jun 2002 03:00:00 GMT", audio+"/ep.mp3?id=1"))
 
-	out, code := run("csv2rss", csvPath, "--title", "My Show")
+	out, code := run("build", "--feed-dir", feedRoot)
 	if code != 0 {
-		t.Fatalf("csv2rss exited %d:\n%s", code, out)
+		t.Fatalf("build exited %d:\n%s", code, out)
 	}
 
 	xml, _ := os.ReadFile(filepath.Join(feedDir, "feed.xml"))
@@ -207,59 +225,29 @@ func TestCSV2RSSLastBuildDateFormat(t *testing.T) {
 	}
 }
 
-func TestCSV2RSSMissingTitleError(t *testing.T) {
-	dir := t.TempDir()
-	csvPath := filepath.Join(dir, "feed.csv")
-	os.WriteFile(csvPath, []byte("title\x1fdescription\x1fdate\x1furl\n"), 0644)
+func TestBuildMissingTitleError(t *testing.T) {
+	feedRoot := t.TempDir()
+	writeHosting(t, feedRoot)
+	writeFeed(t, feedRoot, "untitled", `{"author":"Someone"}`)
 
-	_, code := run("csv2rss", csvPath)
+	out, code := run("build", "untitled", "--feed-dir", feedRoot)
 	if code == 0 {
-		t.Error("expected non-zero exit when --title is missing and no feed.json")
+		t.Fatalf("expected build to fail when feed.json has no title:\n%s", out)
+	}
+	if !strings.Contains(out, `"title" is required`) {
+		t.Errorf("expected missing title error:\n%s", out)
 	}
 }
 
-func TestCSV2RSSLoadsFeedJSON(t *testing.T) {
+func TestBuildRequiresFeedURL(t *testing.T) {
 	audio := audioServer(t)
-	dir := t.TempDir()
-	feedDir := filepath.Join(dir, "feed", "myshow")
-	os.MkdirAll(feedDir, 0755)
-	writeHosting(t, filepath.Dir(feedDir))
+	feedRoot := t.TempDir()
+	feedDir := writeFeed(t, feedRoot, "unhosted", `{"title":"Unhosted"}`,
+		episode("Ep1", "Sat, 29 Jun 2002 03:00:00 GMT", audio+"/ep.mp3"))
 
-	os.WriteFile(filepath.Join(feedDir, "feed.json"), []byte(`{
-		"title":"JSON Show","description":"From JSON","author":"JSON Author"
-	}`), 0644)
-	os.WriteFile(filepath.Join(feedDir, "feed.csv"), []byte(
-		"title\x1fdescription\x1fdate\x1furl\n"+
-			"Ep1\x1f\x1fSat, 29 Jun 2002 03:00:00 GMT\x1f"+audio+"/ep.mp3?id=1\n"),
-		0644)
-
-	out, code := run("csv2rss", filepath.Join(feedDir, "feed.csv"))
-	if code != 0 {
-		t.Fatalf("csv2rss exited %d:\n%s", code, out)
-	}
-
-	xml, _ := os.ReadFile(filepath.Join(feedDir, "feed.xml"))
-	src := string(xml)
-	if !strings.Contains(src, "<title>JSON Show</title>") {
-		t.Errorf("title from feed.json not in output")
-	}
-	if !strings.Contains(src, "<itunes:author>JSON Author</itunes:author>") {
-		t.Errorf("author from feed.json not in output")
-	}
-}
-
-func TestCSV2RSSRequiresFeedURL(t *testing.T) {
-	audio := audioServer(t)
-	dir := t.TempDir()
-	feedDir := filepath.Join(dir, "feed", "unhosted")
-	os.MkdirAll(feedDir, 0755)
-	csvPath := filepath.Join(feedDir, "feed.csv")
-	os.WriteFile(csvPath, []byte("title\x1fdescription\x1fdate\x1furl\n"+
-		"Ep1\x1f\x1fSat, 29 Jun 2002 03:00:00 GMT\x1f"+audio+"/ep.mp3\n"), 0644)
-
-	out, code := run("csv2rss", csvPath, "--title", "Unhosted")
+	out, code := run("build", "unhosted", "--feed-dir", feedRoot)
 	if code == 0 {
-		t.Fatalf("expected csv2rss to fail without hosting.json or feed URLs:\n%s", out)
+		t.Fatalf("expected build to fail without hosting.json or feed URLs:\n%s", out)
 	}
 	if !strings.Contains(out, "no feed URL or image URL") {
 		t.Errorf("expected missing feed URL error:\n%s", out)
@@ -268,290 +256,76 @@ func TestCSV2RSSRequiresFeedURL(t *testing.T) {
 		t.Error("feed.xml should not have been written")
 	}
 
-	// Flags are enough on their own.
-	out, code = run("csv2rss", csvPath, "--title", "Unhosted",
-		"--feed-url", "https://podcasts.example.com/unhosted/feed.xml",
-		"--image-url", "https://podcasts.example.com/unhosted/image.jpg")
+	// feed.json's URLs are enough on their own.
+	os.WriteFile(filepath.Join(feedDir, "feed.json"), []byte(`{
+		"title": "Unhosted",
+		"feed": "https://podcasts.example.com/unhosted/feed.xml",
+		"image": "https://podcasts.example.com/unhosted/image.jpg"
+	}`), 0644)
+	out, code = run("build", "unhosted", "--feed-dir", feedRoot)
 	if code != 0 {
-		t.Fatalf("csv2rss with --feed-url and --image-url exited %d:\n%s", code, out)
+		t.Fatalf("build with feed and image in feed.json exited %d:\n%s", code, out)
 	}
 }
 
-func TestCSV2RSSFailsWhenURLCannotBeResolved(t *testing.T) {
-	dir := t.TempDir()
-	feedDir := filepath.Join(dir, "feed", "broken")
-	os.MkdirAll(feedDir, 0755)
-	writeHosting(t, filepath.Dir(feedDir))
-	csvPath := filepath.Join(feedDir, "feed.csv")
-	os.WriteFile(csvPath, []byte(
-		"title\x1fdescription\x1fdate\x1furl\n"+
-			"Ep1\x1f\x1fSat, 29 Jun 2002 03:00:00 GMT\x1fhttp://127.0.0.1:1/ep1.mp3\n"),
-		0644)
+func TestBuildFailsWhenURLCannotBeResolved(t *testing.T) {
+	feedRoot := t.TempDir()
+	writeHosting(t, feedRoot)
+	writeFeed(t, feedRoot, "broken", `{"title":"Broken Show"}`,
+		episode("Ep1", "Sat, 29 Jun 2002 03:00:00 GMT", "http://127.0.0.1:1/ep1.mp3"))
 
-	out, code := run("csv2rss", csvPath, "--title", "Broken Show")
+	out, code := run("build", "broken", "--feed-dir", feedRoot)
 	if code == 0 {
-		t.Fatalf("expected csv2rss to fail when URL cannot be resolved")
+		t.Fatalf("expected build to fail when URL cannot be resolved")
 	}
 	if !strings.Contains(out, "resolve URL") {
 		t.Fatalf("expected resolve URL error in output, got:\n%s", out)
 	}
 }
 
-// --- rss2csv integration tests ---
+func TestBuildUsesHostingURLs(t *testing.T) {
+	audio := audioServer(t)
+	feedRoot := t.TempDir()
+	writeHosting(t, feedRoot)
+	feedDir := writeFeed(t, feedRoot, "hosted-show", `{"title":"Hosted Show"}`,
+		episode("Ep1", "Sat, 29 Jun 2002 03:00:00 GMT", audio+"/ep1.mp3"))
 
-// copyTestFeed copies testdata/feed.xml to dst, creating its directory.
-func copyTestFeed(t *testing.T, dst string) {
-	t.Helper()
-	data, err := os.ReadFile("testdata/feed.xml")
-	if err != nil {
-		t.Fatalf("read testdata/feed.xml: %v", err)
-	}
-	os.MkdirAll(filepath.Dir(dst), 0755)
-	if err := os.WriteFile(dst, data, 0644); err != nil {
-		t.Fatalf("write %s: %v", dst, err)
-	}
-}
-
-// assertFeedCSV checks that path is a CSV converted from testdata/feed.xml.
-func assertFeedCSV(t *testing.T, path string) {
-	t.Helper()
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("expected CSV at %s: %v", path, err)
-	}
-	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
-	if lines[0] != "title\x1fdescription\x1fdate\x1furl" {
-		t.Errorf("unexpected header %q", lines[0])
-	}
-	if len(lines) != 7 {
-		t.Errorf("got %d lines; want header + 6 episodes:\n%s", len(lines), data)
-	}
-	if !strings.Contains(string(data), "1: 2002-06-29\x1f") {
-		t.Errorf("first episode missing from CSV:\n%s", data)
-	}
-}
-
-// TestRSS2CSVInputInFeedDir is a regression test for rss2csv writing to
-// feed/feed/<slug>/ when the input was already at feed/<slug>/feed.xml.
-func TestRSS2CSVInputInFeedDir(t *testing.T) {
-	root := t.TempDir()
-	input := filepath.Join(root, "feed", "my-show", "feed.xml")
-	copyTestFeed(t, input)
-
-	// No --repo-dir: it defaults to the input's directory name.
-	out, code := runInDir(root, "rss2csv", "feed/my-show/feed.xml")
+	out, code := run("build", "hosted-show", "--feed-dir", feedRoot)
 	if code != 0 {
-		t.Fatalf("rss2csv exited %d:\n%s", code, out)
+		t.Fatalf("build exited %d:\n%s", code, out)
 	}
-
-	assertFeedCSV(t, filepath.Join(root, "feed", "my-show", "feed.csv"))
-	if _, err := os.Stat(filepath.Join(root, "feed", "feed")); err == nil {
-		t.Error("feed/feed/ should not have been created")
-	}
-}
-
-// TestRSS2CSVInputOutsideFeedDir is a regression test for rss2csv writing to
-// <parent of input dir>/feed/<slug>/<input name>.csv instead of feed/<slug>/feed.csv.
-func TestRSS2CSVInputOutsideFeedDir(t *testing.T) {
-	root := t.TempDir()
-	os.MkdirAll(filepath.Join(root, "feed"), 0755)
-	copyTestFeed(t, filepath.Join(root, "downloads", "their.xml"))
-
-	out, code := runInDir(root, "rss2csv", "downloads/their.xml", "--repo-dir", "other")
-	if code != 0 {
-		t.Fatalf("rss2csv exited %d:\n%s", code, out)
-	}
-
-	feedDir := filepath.Join(root, "feed", "other")
-	assertFeedCSV(t, filepath.Join(feedDir, "feed.csv"))
-	for _, name := range []string{"their.csv", "their.xml", "feed.xml"} {
-		if _, err := os.Stat(filepath.Join(feedDir, name)); err == nil {
-			t.Errorf("feed/other/%s should not have been created", name)
+	xml, _ := os.ReadFile(filepath.Join(feedDir, "feed.xml"))
+	src := string(xml)
+	base := "https://podcasts.example.com/hosted-show/"
+	for _, want := range []string{
+		`<atom:link href="` + base + `feed.xml"`,
+		`<itunes:new-feed-url>` + base + `feed.xml</itunes:new-feed-url>`,
+		`<url>` + base + `image.jpg</url>`,
+		`<!-- podcastinator-inputs: `,
+	} {
+		if !strings.Contains(src, want) {
+			t.Errorf("expected %q in feed.xml:\n%s", want, src)
 		}
 	}
 }
 
-func TestRSS2CSVFeedDirFlag(t *testing.T) {
-	feedRoot := t.TempDir()
-	input := filepath.Join(t.TempDir(), "their.xml")
-	copyTestFeed(t, input)
-
-	out, code := run("rss2csv", input, "--repo-dir", "other", "--feed-dir", feedRoot)
-	if code != 0 {
-		t.Fatalf("rss2csv exited %d:\n%s", code, out)
-	}
-	assertFeedCSV(t, filepath.Join(feedRoot, "other", "feed.csv"))
-}
-
-func TestRSS2CSVRequiresRepoDirOutsideFeedDir(t *testing.T) {
-	root := t.TempDir()
-	os.MkdirAll(filepath.Join(root, "feed"), 0755)
-	copyTestFeed(t, filepath.Join(root, "downloads", "their.xml"))
-
-	out, code := runInDir(root, "rss2csv", "downloads/their.xml")
-	if code == 0 {
-		t.Fatalf("expected rss2csv to fail without --repo-dir:\n%s", out)
-	}
-	if !strings.Contains(out, "--repo-dir is required") {
-		t.Errorf("expected missing --repo-dir error:\n%s", out)
-	}
-}
-
-// --- pubdate integration tests ---
-
-func TestPubdateMirroringBashTest(t *testing.T) {
-	dir := t.TempDir()
-	csvPath := filepath.Join(dir, "test.csv")
-
-	os.WriteFile(csvPath, []byte(
-		"title;description;date;url\n"+
-			"Episode 1;Desc 1;Jun 1, 2023;http://example.com/1\n"+
-			"Episode 2;Desc 2;Jul 2, 2023;http://example.com/2\n"+
-			"Episode 3;Desc 3;Jul. 3, 2023;http://example.com/3\n",
-	), 0644)
-
-	out, code := run("pubdate", csvPath, "--input-format", "%b %d, %Y", "--delimiter", ";")
-	if code != 0 {
-		t.Fatalf("pubdate exited %d:\n%s", code, out)
-	}
-
-	data, _ := os.ReadFile(csvPath)
-	content := string(data)
-	if !strings.Contains(content, "Thu, 01 Jun 2023 03:00:00 GMT") {
-		t.Errorf("missing Thu, 01 Jun 2023 in:\n%s", content)
-	}
-	if !strings.Contains(content, "Sun, 02 Jul 2023 03:00:00 GMT") {
-		t.Errorf("missing Sun, 02 Jul 2023 in:\n%s", content)
-	}
-	if !strings.Contains(content, "Mon, 03 Jul 2023 03:00:00 GMT") {
-		t.Errorf("missing Mon, 03 Jul 2023 in:\n%s", content)
-	}
-
-	// .old backup must exist
-	if _, err := os.Stat(csvPath + ".old"); err != nil {
-		t.Error("expected .old backup file")
-	}
-}
-
-// --- archive integration tests ---
-
-func TestArchiveMirroringBashTest(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "audio/mpeg")
-		switch r.URL.Path {
-		case "/Free_Test_Data_100KB_MP3.mp3":
-			w.Write(make([]byte, 1024))
-		case "/Free_Test_Data_100KB_OGG.ogg":
-			w.Write(make([]byte, 1024))
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	defer srv.Close()
-
-	inputDir := t.TempDir()
-	outputDir := t.TempDir()
-
-	os.WriteFile(filepath.Join(inputDir, "feed.csv"), []byte(fmt.Sprintf(
-		"title;description;date;url\n"+
-			"Episode 1;Desc 1;Jun 1, 2023;%s/Free_Test_Data_100KB_MP3.mp3\n"+
-			"Episode 2;Desc 2;Jul 2, 2023;%s/Free_Test_Data_100KB_OGG.ogg\n",
-		srv.URL, srv.URL,
-	)), 0644)
-	os.WriteFile(filepath.Join(inputDir, "foo.txt"), []byte("foo"), 0644)
-
-	out, code := run("archive", inputDir, outputDir, "--delimiter", ";")
-	if code != 0 {
-		t.Fatalf("archive exited %d:\n%s", code, out)
-	}
-
-	feedName := filepath.Base(inputDir)
-	feedDir := filepath.Join(outputDir, feedName)
-
-	// Check MP3 downloaded
-	if _, err := os.Stat(filepath.Join(feedDir, "items", "Free_Test_Data_100KB_MP3.mp3")); err != nil {
-		t.Error("MP3 not downloaded")
-	}
-	// Check OGG downloaded
-	if _, err := os.Stat(filepath.Join(feedDir, "items", "Free_Test_Data_100KB_OGG.ogg")); err != nil {
-		t.Error("OGG not downloaded")
-	}
-	// Check foo.txt copied
-	if data, err := os.ReadFile(filepath.Join(feedDir, "foo.txt")); err != nil || string(data) != "foo" {
-		t.Error("foo.txt not copied correctly")
-	}
-	// Check local.csv
-	localCSV, _ := os.ReadFile(filepath.Join(feedDir, "local.csv"))
-	if !strings.Contains(string(localCSV), "file://items/Free_Test_Data_100KB_MP3.mp3") {
-		t.Errorf("local.csv missing mp3 URL:\n%s", string(localCSV))
-	}
-	if !strings.Contains(string(localCSV), "file://items/Free_Test_Data_100KB_OGG.ogg") {
-		t.Errorf("local.csv missing ogg URL:\n%s", string(localCSV))
-	}
-}
-
-// --- regenerate integration tests ---
-
-// TestRegenerateNoDelimiterInFeedJSON is a regression test for the bug where
-// regenerate passed rune(0) as the delimiter to csv2rss, causing "invalid field
-// or comment delimiter" when feed.json has no "delimiter" field (the common case).
-func TestRegenerateNoDelimiterInFeedJSON(t *testing.T) {
-	audio := audioServer(t)
-	// Build a minimal feed directory with feed.json (no delimiter) and feed.csv
-	// using the default unit-separator delimiter.
-	feedRoot := t.TempDir()
-	writeHosting(t, feedRoot)
-	feedDir := filepath.Join(feedRoot, "my-show")
-	os.MkdirAll(feedDir, 0755)
-
-	os.WriteFile(filepath.Join(feedDir, "feed.json"), []byte(`{
-		"title": "My Show",
-		"description": "A test show",
-		"author": "Test Author"
-	}`), 0644)
-
-	// CSV with unit-separator delimiter (default) and a single episode.
-	os.WriteFile(filepath.Join(feedDir, "feed.csv"), []byte(
-		"title\x1fdescription\x1fdate\x1furl\n"+
-			"Episode 1\x1f\x1fSat, 29 Jun 2002 03:00:00 GMT\x1f"+audio+"/ep.mp3?id=1\n",
-	), 0644)
-
-	out, code := run("regenerate", "--feed-dir", feedRoot, "--feed", "my-show")
-	if code != 0 {
-		t.Fatalf("regenerate exited %d:\n%s", code, out)
-	}
-
-	// feed.xml must have been created
-	if _, err := os.Stat(filepath.Join(feedDir, "feed.xml")); err != nil {
-		t.Errorf("feed.xml not created: %v", err)
-	}
-}
-
-// TestRegenerateAllFeeds verifies that regenerate (no --feed flag) processes
-// every feed directory that has both feed.json and feed.csv, and skips those
-// that are missing either.
-func TestRegenerateAllFeeds(t *testing.T) {
+// TestBuildAllFeeds verifies that build with no feeds named builds every
+// feed directory with a feed.json, and ignores directories without one.
+func TestBuildAllFeeds(t *testing.T) {
 	audio := audioServer(t)
 	feedRoot := t.TempDir()
 	writeHosting(t, feedRoot)
 
-	// Feed with both files — should be regenerated.
-	goodDir := filepath.Join(feedRoot, "good-show")
-	os.MkdirAll(goodDir, 0755)
-	os.WriteFile(filepath.Join(goodDir, "feed.json"), []byte(`{"title":"Good Show"}`), 0644)
-	os.WriteFile(filepath.Join(goodDir, "feed.csv"), []byte(
-		"title\x1fdescription\x1fdate\x1furl\n"+
-			"Ep1\x1f\x1fSat, 29 Jun 2002 03:00:00 GMT\x1f"+audio+"/ep.mp3?id=1\n",
-	), 0644)
+	goodDir := writeFeed(t, feedRoot, "good-show", `{"title":"Good Show"}`,
+		episode("Ep1", "Sat, 29 Jun 2002 03:00:00 GMT", audio+"/ep.mp3?id=1"))
 
-	// Feed with no feed.json — should be skipped silently.
 	noJSONDir := filepath.Join(feedRoot, "no-json")
 	os.MkdirAll(noJSONDir, 0755)
 	os.WriteFile(filepath.Join(noJSONDir, "feed.csv"), []byte("title\x1fdescription\x1fdate\x1furl\n"), 0644)
 
-	out, code := run("regenerate", "--feed-dir", feedRoot)
+	out, code := run("build", "--feed-dir", feedRoot)
 	if code != 0 {
-		t.Fatalf("regenerate exited %d:\n%s", code, out)
+		t.Fatalf("build exited %d:\n%s", code, out)
 	}
 
 	if _, err := os.Stat(filepath.Join(goodDir, "feed.xml")); err != nil {
@@ -562,25 +336,18 @@ func TestRegenerateAllFeeds(t *testing.T) {
 	}
 }
 
-// TestRegenerateExclude verifies --exclude skips named feeds.
-func TestRegenerateExclude(t *testing.T) {
+func TestBuildExclude(t *testing.T) {
 	audio := audioServer(t)
 	feedRoot := t.TempDir()
 	writeHosting(t, feedRoot)
-
 	for _, name := range []string{"show-a", "show-b"} {
-		dir := filepath.Join(feedRoot, name)
-		os.MkdirAll(dir, 0755)
-		os.WriteFile(filepath.Join(dir, "feed.json"), []byte(`{"title":"`+name+`"}`), 0644)
-		os.WriteFile(filepath.Join(dir, "feed.csv"), []byte(
-			"title\x1fdescription\x1fdate\x1furl\n"+
-				"Ep1\x1f\x1fSat, 29 Jun 2002 03:00:00 GMT\x1f"+audio+"/ep.mp3?id=1\n",
-		), 0644)
+		writeFeed(t, feedRoot, name, `{"title":"`+name+`"}`,
+			episode("Ep1", "Sat, 29 Jun 2002 03:00:00 GMT", audio+"/ep.mp3?id=1"))
 	}
 
-	out, code := run("regenerate", "--feed-dir", feedRoot, "--exclude", "show-b")
+	out, code := run("build", "--feed-dir", feedRoot, "--exclude", "show-b")
 	if code != 0 {
-		t.Fatalf("regenerate exited %d:\n%s", code, out)
+		t.Fatalf("build exited %d:\n%s", code, out)
 	}
 
 	if _, err := os.Stat(filepath.Join(feedRoot, "show-a", "feed.xml")); err != nil {
@@ -591,16 +358,489 @@ func TestRegenerateExclude(t *testing.T) {
 	}
 }
 
-// TestRegenerateSingleFeedAndExcludeMutuallyExclusive verifies the CLI rejects
-// the combination of --feed and --exclude.
-func TestRegenerateSingleFeedAndExcludeMutuallyExclusive(t *testing.T) {
-	_, code := run("regenerate", "--feed", "something", "--exclude", "other")
+func TestBuildNamedFeedsAndExcludeMutuallyExclusive(t *testing.T) {
+	feedRoot := t.TempDir()
+	writeFeed(t, feedRoot, "something", `{"title":"Something"}`)
+	out, code := run("build", "something", "--exclude", "other", "--feed-dir", feedRoot)
 	if code == 0 {
-		t.Error("expected non-zero exit when both --feed and --exclude are set")
+		t.Errorf("expected non-zero exit when feeds are named with --exclude:\n%s", out)
 	}
 }
 
-func TestSelfhostTestResourceExists(t *testing.T) {
+func TestBuildUnknownFeed(t *testing.T) {
+	feedRoot := t.TempDir()
+	out, code := run("build", "nope", "--feed-dir", feedRoot)
+	if code == 0 || !strings.Contains(out, `no feed "nope"`) {
+		t.Errorf("expected unknown feed error, exit %d:\n%s", code, out)
+	}
+}
+
+func TestDefaultFeedDir(t *testing.T) {
+	root := t.TempDir()
+	out, code := runInDir(root, "build")
+	if code == 0 || !strings.Contains(out, "podcastinator init") {
+		t.Errorf("expected missing ./feed to suggest init, exit %d:\n%s", code, out)
+	}
+
+	out, code = runInDir(root, "init")
+	if code != 0 {
+		t.Fatalf("init exited %d:\n%s", code, out)
+	}
+	if _, err := os.Stat(filepath.Join(root, "feed")); err != nil {
+		t.Fatalf("init didn't create ./feed: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "feed", "hosting.json")); err == nil {
+		t.Error("init without --bucket shouldn't write hosting.json")
+	}
+	if out, code := runInDir(root, "build"); code != 0 {
+		t.Errorf("build in an empty ./feed exited %d:\n%s", code, out)
+	}
+}
+
+func TestInitWritesHosting(t *testing.T) {
+	feedRoot := filepath.Join(t.TempDir(), "feeds")
+	out, code := run("init", "--feed-dir", feedRoot, "--bucket", "my-bucket", "--public-url", "https://podcasts.example.com/")
+	if code != 0 {
+		t.Fatalf("init exited %d:\n%s", code, out)
+	}
+	data, err := os.ReadFile(filepath.Join(feedRoot, "hosting.json"))
+	if err != nil {
+		t.Fatalf("hosting.json not written: %v", err)
+	}
+	for _, want := range []string{`"bucket": "my-bucket"`, `"region": "eu-west-2"`, `"public_url": "https://podcasts.example.com"`} {
+		if !strings.Contains(string(data), want) {
+			t.Errorf("expected %s in hosting.json:\n%s", want, data)
+		}
+	}
+
+	out, code = run("init", "--feed-dir", feedRoot, "--bucket", "other-bucket")
+	if code == 0 || !strings.Contains(out, "already exists") {
+		t.Errorf("expected init to refuse to overwrite hosting.json, exit %d:\n%s", code, out)
+	}
+}
+
+// --- import and update integration tests ---
+
+func TestImportFromFile(t *testing.T) {
+	feedRoot := t.TempDir()
+
+	out, code := run("import", "testdata/feed.xml", "--feed-dir", feedRoot)
+	if code != 0 {
+		t.Fatalf("import exited %d:\n%s", code, out)
+	}
+
+	// Named after the title, "Dudes Rock".
+	dir := filepath.Join(feedRoot, "dudes-rock")
+	data, err := os.ReadFile(filepath.Join(dir, "feed.csv"))
+	if err != nil {
+		t.Fatalf("expected feed.csv: %v", err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	if lines[0] != "title\x1fdescription\x1fdate\x1furl\x1fguid" {
+		t.Errorf("unexpected header %q", lines[0])
+	}
+	if len(lines) != 7 {
+		t.Errorf("got %d lines; want header + 6 episodes:\n%s", len(lines), data)
+	}
+	// Every episode gets its own new UUID, not the source's GUID.
+	seen := map[string]bool{}
+	for _, line := range lines[1:] {
+		fields := strings.Split(line, "\x1f")
+		guid := fields[len(fields)-1]
+		if !uuidPattern.MatchString(guid) || seen[guid] {
+			t.Errorf("expected a new, distinct UUID, got %q in %q", guid, line)
+		}
+		seen[guid] = true
+	}
+	if !strings.Contains(string(data), "1: 2002-06-29\x1f") {
+		t.Errorf("first episode missing from CSV:\n%s", data)
+	}
+	// Descriptions are stored escaped, as build writes them out verbatim.
+	if !strings.Contains(string(data), "\x1f&lt;p&gt;You're the one that's sad and lonely!&lt;/p&gt;") {
+		t.Errorf("expected an HTML-escaped description:\n%s", data)
+	}
+
+	cfg, err := os.ReadFile(filepath.Join(dir, "feed.json"))
+	if err != nil {
+		t.Fatalf("expected feed.json: %v", err)
+	}
+	abs, _ := filepath.Abs("testdata/feed.xml")
+	for _, want := range []string{`"title": "Dudes Rock"`, `"author": "Real-ass dudes"`, `"source": "` + abs + `"`} {
+		if !strings.Contains(string(cfg), want) {
+			t.Errorf("expected %s in feed.json:\n%s", want, cfg)
+		}
+	}
+
+	// It won't overwrite the feed without --force.
+	out, code = run("import", "testdata/feed.xml", "--feed-dir", feedRoot)
+	if code == 0 || !strings.Contains(out, "already exists") {
+		t.Errorf("expected a second import to refuse, exit %d:\n%s", code, out)
+	}
+	out, code = run("import", "testdata/feed.xml", "--slug", "other", "--feed-dir", feedRoot)
+	if code != 0 {
+		t.Fatalf("import --slug exited %d:\n%s", code, out)
+	}
+	if _, err := os.Stat(filepath.Join(feedRoot, "other", "feed.csv")); err != nil {
+		t.Errorf("import --slug didn't write other/feed.csv: %v", err)
+	}
+}
+
+// TestImportFixture imports testdata/import/source.xml, a feed in the shape
+// third-party hosts produce, and compares the feed directory it writes with
+// testdata/import/want: feed.csv (UUIDs masked) and feed.json byte for byte,
+// and image.jpg converted from art.png. {{base}} in the fixtures stands for
+// the test server's URL.
+func TestImportFixture(t *testing.T) {
+	const fixtures = "testdata/import"
+	var srv *httptest.Server
+	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/source.xml":
+			data, _ := os.ReadFile(filepath.Join(fixtures, "source.xml"))
+			w.Write(bytes.ReplaceAll(data, []byte("{{base}}"), []byte(srv.URL)))
+		case "/art.png":
+			http.ServeFile(w, r, filepath.Join(fixtures, "art.png"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	feedRoot := t.TempDir()
+	out, code := run("import", srv.URL+"/source.xml", "--feed-dir", feedRoot)
+	if code != 0 {
+		t.Fatalf("import exited %d:\n%s", code, out)
+	}
+	if !strings.Contains(out, `Warning: skipping "A note about our schedule", which has no audio URL`) {
+		t.Errorf("expected the item without audio to be reported as skipped:\n%s", out)
+	}
+
+	// The slug comes from the title.
+	dir := filepath.Join(feedRoot, "bill-ben-s-garden")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("import didn't create the feed directory: %v\n%s", err, out)
+	}
+	var names []string
+	for _, e := range entries {
+		names = append(names, e.Name())
+	}
+	if got := strings.Join(names, " "); got != "feed.csv feed.json image.jpg" {
+		t.Errorf("feed directory holds %q; want feed.csv, feed.json and image.jpg", got)
+	}
+
+	for _, name := range []string{"feed.csv", "feed.json"} {
+		want, err := os.ReadFile(filepath.Join(fixtures, "want", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		want = bytes.ReplaceAll(want, []byte("{{base}}"), []byte(srv.URL))
+		got, _ := os.ReadFile(filepath.Join(dir, name))
+		got = uuidPattern.ReplaceAll(got, []byte("UUID"))
+		if !bytes.Equal(got, want) {
+			t.Errorf("%s differs from %s/want/%s.\ngot:\n%q\nwant:\n%q", name, fixtures, name, got, want)
+		}
+	}
+
+	// Each episode has its own UUID, not the source's GUID.
+	csv, _ := os.ReadFile(filepath.Join(dir, "feed.csv"))
+	if ids := uuidPattern.FindAll(csv, -1); len(ids) != 3 || bytes.Equal(ids[0], ids[1]) || bytes.Equal(ids[1], ids[2]) {
+		t.Errorf("expected 3 distinct UUIDs:\n%s", csv)
+	}
+
+	// image.jpg is itunes:image's PNG (not <image>'s small.jpg), converted to JPEG.
+	art, err := os.Open(filepath.Join(dir, "image.jpg"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer art.Close()
+	cfg, format, err := image.DecodeConfig(art)
+	if err != nil || format != "jpeg" || cfg.Width != 30 || cfg.Height != 20 {
+		t.Errorf("image.jpg: format %q, %dx%d, err %v; want a 30x20 JPEG", format, cfg.Width, cfg.Height, err)
+	}
+}
+
+// sourceServer serves a source feed, rendered from the given items on every
+// request, along with episode audio.
+func sourceServer(t *testing.T, items *[]string) *httptest.Server {
+	t.Helper()
+	var srv *httptest.Server
+	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/feed.rss":
+			fmt.Fprintf(w, `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Bill &amp; Ben</title>
+    <link>https://example.com/bill-and-ben</link>
+    <atom:link href="%s/feed.rss" rel="self" type="application/rss+xml"/>
+    <description>Flowerpot men.</description>
+    %s
+  </channel>
+</rss>`, srv.URL, strings.Join(*items, "\n"))
+		default:
+			http.ServeFile(w, r, "testdata/test.mp3")
+		}
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+func sourceItem(srvURL, title, date, description string) string {
+	return fmt.Sprintf(`<item><title>%s</title><pubDate>%s</pubDate><description><![CDATA[%s]]></description>`+
+		`<enclosure url="%s/%s.mp3" length="1" type="audio/mpeg"/></item>`,
+		title, date, description, srvURL, urlSafe(title))
+}
+
+func urlSafe(s string) string {
+	return strings.ToLower(strings.ReplaceAll(s, " ", "-"))
+}
+
+// TestImportBuildUpdate imports a feed from a URL, builds it, and picks up a
+// new episode with update. TestImportFixture checks what import writes.
+func TestImportBuildUpdate(t *testing.T) {
+	var items []string
+	srv := sourceServer(t, &items)
+	items = []string{
+		sourceItem(srv.URL, "Episode Two", "Tue, 02 Jan 2024 09:00:00 GMT", "<p>Weeds\nand pots</p>"),
+		sourceItem(srv.URL, "Episode One", "Mon, 01 Jan 2024 09:00:00 GMT", ""),
+	}
+
+	feedRoot := t.TempDir()
+	writeHosting(t, feedRoot)
+
+	out, code := run("import", srv.URL+"/feed.rss", "--feed-dir", feedRoot)
+	if code != 0 {
+		t.Fatalf("import exited %d:\n%s", code, out)
+	}
+	dir := filepath.Join(feedRoot, "bill-ben")
+
+	out, code = run("build", "--feed-dir", feedRoot)
+	if code != 0 {
+		t.Fatalf("build exited %d:\n%s", code, out)
+	}
+	assertWellFormed(t, filepath.Join(dir, "feed.xml"))
+
+	out, code = run("update", "--feed-dir", feedRoot)
+	if code != 0 || !strings.Contains(out, "no new episodes") {
+		t.Fatalf("update with nothing new exited %d:\n%s", code, out)
+	}
+
+	items = append([]string{
+		sourceItem(srv.URL, "Episode Three", "Wed, 03 Jan 2024 09:00:00 GMT", "New & improved"),
+	}, items...)
+	out, code = run("update", "bill-ben", "--feed-dir", feedRoot)
+	if code != 0 || !strings.Contains(out, "1 new episode(s)") {
+		t.Fatalf("update exited %d:\n%s", code, out)
+	}
+	csv, _ := os.ReadFile(filepath.Join(dir, "feed.csv"))
+	if got := uuidPattern.ReplaceAllString(string(csv), "UUID"); !strings.HasSuffix(got,
+		"Episode Three\x1fNew &amp; improved\x1fWed, 03 Jan 2024 09:00:00 GMT\x1f"+srv.URL+"/episode-three.mp3\x1fUUID\n") {
+		t.Errorf("expected Episode Three appended:\n%s", csv)
+	}
+
+	out, _ = run("status", "--feed-dir", feedRoot)
+	if !regexp.MustCompile(`bill-ben\s+3\s+2024-01-03T09:00:00Z\s+stale\s+0/3 hosted\s+yes`).MatchString(out) {
+		t.Errorf("expected status to show the feed as stale after update:\n%s", out)
+	}
+	if out, code := run("build", "--feed-dir", feedRoot); code != 0 {
+		t.Fatalf("build exited %d:\n%s", code, out)
+	}
+	assertWellFormed(t, filepath.Join(dir, "feed.xml"))
+	out, _ = run("status", "--feed-dir", feedRoot)
+	if !regexp.MustCompile(`bill-ben\s+3\s+\S+\s+ok\s`).MatchString(out) {
+		t.Errorf("expected status ok after build:\n%s", out)
+	}
+}
+
+func TestUpdateRequiresSource(t *testing.T) {
+	feedRoot := t.TempDir()
+	writeFeed(t, feedRoot, "handmade", `{"title":"Handmade"}`)
+
+	out, code := run("update", "--feed-dir", feedRoot)
+	if code != 0 {
+		t.Errorf("update of every feed should skip feeds without a source, exit %d:\n%s", code, out)
+	}
+	out, code = run("update", "handmade", "--feed-dir", feedRoot)
+	if code == 0 || !strings.Contains(out, `no "source"`) {
+		t.Errorf("expected update of a named feed without a source to fail, exit %d:\n%s", code, out)
+	}
+}
+
+var uuidPattern = regexp.MustCompile(`[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}`)
+
+// guids returns the <guid> elements in a feed, as written.
+func guids(t *testing.T, path string) []string {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return regexp.MustCompile(`<guid[^>]*>[^<]*</guid>`).FindAllString(string(data), -1)
+}
+
+// TestBuildKeepsPublishedGUIDs checks a feed from before the guid column keeps
+// the GUIDs it was published with (its episode URLs), written exactly as
+// before, while new episodes get UUIDs.
+func TestBuildKeepsPublishedGUIDs(t *testing.T) {
+	audio := audioServer(t)
+	feedRoot := t.TempDir()
+	writeHosting(t, feedRoot)
+	dir := writeFeed(t, feedRoot, "old-show", `{"title":"Old Show"}`,
+		episode("Ep1", "Sat, 29 Jun 2002 03:00:00 GMT", audio+"/ep1.mp3"),
+		episode("Ep2", "Sat, 06 Jul 2002 03:00:00 GMT", audio+"/ep2.mp3?a=1&b=2"),
+		episode("Ep3", "Sat, 13 Jul 2002 03:00:00 GMT", audio+"/ep3.mp3"))
+
+	// As 0.3.0 published Ep1 and Ep2, with their URLs as GUIDs (and & escaped twice).
+	published := []string{
+		`<guid>` + audio + `/ep1.mp3</guid>`,
+		`<guid>` + audio + `/ep2.mp3?a=1&amp;amp;b=2</guid>`,
+	}
+	os.WriteFile(filepath.Join(dir, "feed.xml"), []byte(`<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0"><channel><title>Old Show</title>
+<item><title>1: Ep1</title><pubDate>Sat, 29 Jun 2002 03:00:00 GMT</pubDate>`+published[0]+
+		`<enclosure url="`+audio+`/ep1.mp3" length="1" type="audio/mpeg"/></item>
+<item><title>2: Ep2</title><pubDate>Sat, 06 Jul 2002 03:00:00 GMT</pubDate>`+published[1]+
+		`<enclosure url="`+audio+`/ep2.mp3?a=1&amp;amp;b=2" length="1" type="audio/mpeg"/></item>
+</channel></rss>
+`), 0644)
+
+	out, code := run("build", "--feed-dir", feedRoot)
+	if code != 0 {
+		t.Fatalf("build exited %d:\n%s", code, out)
+	}
+	if !strings.Contains(out, "Gave 3 episode(s) a GUID") {
+		t.Errorf("expected build to report the GUIDs it assigned:\n%s", out)
+	}
+
+	got := guids(t, filepath.Join(dir, "feed.xml"))
+	if len(got) != 3 || got[0] != published[0] || got[1] != published[1] {
+		t.Fatalf("published GUIDs changed:\n%s\nwant to start:\n%s", strings.Join(got, "\n"), strings.Join(published, "\n"))
+	}
+	if !regexp.MustCompile(`^<guid isPermaLink="false">` + uuidPattern.String() + `</guid>$`).MatchString(got[2]) {
+		t.Errorf("new episode's GUID = %s; want a UUID that isn't a permalink", got[2])
+	}
+
+	// The GUIDs are now in the CSV, so moving an episode doesn't change its GUID.
+	csvPath := filepath.Join(dir, "feed.csv")
+	csv, _ := os.ReadFile(csvPath)
+	os.WriteFile(csvPath, []byte(strings.ReplaceAll(string(csv), "/ep1.mp3\x1f", "/moved/ep1.mp3\x1f")), 0644)
+	if out, code := run("build", "--feed-dir", feedRoot); code != 0 {
+		t.Fatalf("build exited %d:\n%s", code, out)
+	}
+	moved := guids(t, filepath.Join(dir, "feed.xml"))
+	if strings.Join(moved, "\n") != strings.Join(got, "\n") {
+		t.Errorf("GUIDs changed when an episode moved:\n%s\nwant:\n%s", strings.Join(moved, "\n"), strings.Join(got, "\n"))
+	}
+	xml, _ := os.ReadFile(filepath.Join(dir, "feed.xml"))
+	if !strings.Contains(string(xml), `<enclosure url="`+audio+`/moved/ep1.mp3"`) {
+		t.Errorf("expected the moved episode's new URL in its enclosure:\n%s", xml)
+	}
+}
+
+// assertWellFormed fails unless path parses as XML.
+func assertWellFormed(t *testing.T, path string) {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dec := xml.NewDecoder(bytes.NewReader(data))
+	for {
+		if _, err := dec.Token(); err == io.EOF {
+			return
+		} else if err != nil {
+			t.Fatalf("%s isn't well-formed XML: %v", path, err)
+		}
+	}
+}
+
+// --- dates integration tests ---
+
+func TestDates(t *testing.T) {
+	feedRoot := t.TempDir()
+	dir := filepath.Join(feedRoot, "show")
+	os.MkdirAll(dir, 0755)
+	os.WriteFile(filepath.Join(dir, "feed.json"), []byte(`{"title":"Show","delimiter":";"}`), 0644)
+	csvPath := filepath.Join(dir, "feed.csv")
+	os.WriteFile(csvPath, []byte(
+		"title;description;date;url\n"+
+			"Episode 1;Desc 1;Jun 1, 2023;http://example.com/1\n"+
+			"Episode 2;Desc 2;Jul 2, 2023;http://example.com/2\n"+
+			"Episode 3;Desc 3;Jul. 3, 2023;http://example.com/3\n",
+	), 0644)
+
+	out, code := run("dates", "show", "--from", "%b %d, %Y", "--feed-dir", feedRoot)
+	if code != 0 {
+		t.Fatalf("dates exited %d:\n%s", code, out)
+	}
+
+	data, _ := os.ReadFile(csvPath)
+	content := string(data)
+	for _, want := range []string{"Thu, 01 Jun 2023 03:00:00 GMT", "Sun, 02 Jul 2023 03:00:00 GMT", "Mon, 03 Jul 2023 03:00:00 GMT"} {
+		if !strings.Contains(content, want) {
+			t.Errorf("missing %s in:\n%s", want, content)
+		}
+	}
+	if _, err := os.Stat(csvPath + ".old"); err != nil {
+		t.Error("expected .old backup file")
+	}
+
+	if _, code := run("dates", "show", "--feed-dir", feedRoot); code == 0 {
+		t.Error("expected dates without --from to fail")
+	}
+}
+
+// --- audio integration tests ---
+
+func TestAudioDownload(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "audio/mpeg")
+		switch r.URL.Path {
+		case "/Free_Test_Data_100KB_MP3.mp3", "/Free_Test_Data_100KB_OGG.ogg":
+			w.Write(make([]byte, 1024))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	feedRoot := t.TempDir()
+	outputDir := t.TempDir()
+	dir := filepath.Join(feedRoot, "show")
+	os.MkdirAll(dir, 0755)
+	os.WriteFile(filepath.Join(dir, "feed.json"), []byte(`{"title":"Show","delimiter":";"}`), 0644)
+	os.WriteFile(filepath.Join(dir, "feed.csv"), []byte(fmt.Sprintf(
+		"title;description;date;url\n"+
+			"Episode 1;Desc 1;Jun 1, 2023;%s/Free_Test_Data_100KB_MP3.mp3\n"+
+			"Episode 2;Desc 2;Jul 2, 2023;%s/Free_Test_Data_100KB_OGG.ogg\n",
+		srv.URL, srv.URL,
+	)), 0644)
+	os.WriteFile(filepath.Join(dir, "foo.txt"), []byte("foo"), 0644)
+
+	out, code := run("audio", "download", "show", outputDir, "--feed-dir", feedRoot)
+	if code != 0 {
+		t.Fatalf("audio download exited %d:\n%s", code, out)
+	}
+
+	archived := filepath.Join(outputDir, "show")
+	for _, name := range []string{"Free_Test_Data_100KB_MP3.mp3", "Free_Test_Data_100KB_OGG.ogg"} {
+		if _, err := os.Stat(filepath.Join(archived, "items", name)); err != nil {
+			t.Errorf("%s not downloaded", name)
+		}
+	}
+	if data, err := os.ReadFile(filepath.Join(archived, "foo.txt")); err != nil || string(data) != "foo" {
+		t.Error("foo.txt not copied correctly")
+	}
+	localCSV, _ := os.ReadFile(filepath.Join(archived, "local.csv"))
+	for _, want := range []string{"file://items/Free_Test_Data_100KB_MP3.mp3", "file://items/Free_Test_Data_100KB_OGG.ogg"} {
+		if !strings.Contains(string(localCSV), want) {
+			t.Errorf("local.csv missing %s:\n%s", want, localCSV)
+		}
+	}
+}
+
+func TestAudioUploadTestResourceExists(t *testing.T) {
 	info, err := os.Stat("testdata/test.mp3")
 	if err != nil {
 		t.Fatalf("testdata/test.mp3 not found: %v", err)
@@ -611,7 +851,7 @@ func TestSelfhostTestResourceExists(t *testing.T) {
 	}
 }
 
-// TestSelfhostDstURLHasSlashBetweenBucketAndKey is a regression test for the bug
+// TestAudioUploadDstURLHasSlashBetweenBucketAndKey is a regression test for the bug
 // where the destination HTTPS URL was constructed as:
 //
 //	https://s3.REGION.amazonaws.com/BUCKETrepo-dir/file.mp3   ← missing /
@@ -622,26 +862,21 @@ func TestSelfhostTestResourceExists(t *testing.T) {
 //
 // This caused S3 moves to 404 immediately because the URL pointed at a
 // non-existent host rather than the correct bucket path.
-func TestSelfhostDstURLHasSlashBetweenBucketAndKey(t *testing.T) {
+func TestAudioUploadDstURLHasSlashBetweenBucketAndKey(t *testing.T) {
 	feedRoot := t.TempDir()
-	feedDir := filepath.Join(feedRoot, "my-show")
-	os.MkdirAll(feedDir, 0755)
-
 	bucket := "my-bucket"
 	region := "eu-west-2"
+	os.WriteFile(filepath.Join(feedRoot, "hosting.json"), []byte(fmt.Sprintf(
+		`{"bucket":%q,"region":%q}`, bucket, region)), 0644)
 
-	// Write a CSV whose URL is already at the correct destination — selfhost
-	// should detect "already at destination, skipping" without any S3 calls.
-	csvContent := fmt.Sprintf(
-		"title\x1fdescription\x1fdate\x1furl\n"+
-			"Episode 1\x1f\x1fSat, 29 Jun 2002 03:00:00 GMT\x1fhttps://s3.%s.amazonaws.com/%s/my-show/01-episode-1.mp3\n",
-		region, bucket,
-	)
-	os.WriteFile(filepath.Join(feedDir, "feed.csv"), []byte(csvContent), 0644)
+	// The URL is already at the correct destination, so upload should detect
+	// "already at destination, skipping" without any S3 calls.
+	writeFeed(t, feedRoot, "my-show", `{"title":"My Show"}`,
+		episode("Episode 1", "Sat, 29 Jun 2002 03:00:00 GMT",
+			fmt.Sprintf("https://s3.%s.amazonaws.com/%s/my-show/01-episode-1.mp3", region, bucket)))
 
-	out, _ := run("selfhost", "my-show", "--feed-dir", feedRoot, "--bucket", bucket, "--region", region)
+	out, _ := run("audio", "upload", "my-show", "--feed-dir", feedRoot)
 
-	// Verify the Dst URL shown in the output contains a / between bucket and key.
 	wantURLFragment := fmt.Sprintf("amazonaws.com/%s/my-show/", bucket)
 	if !strings.Contains(out, wantURLFragment) {
 		t.Errorf("Dst URL missing slash between bucket and key.\nWant fragment: %q\nGot output:\n%s",
@@ -650,6 +885,15 @@ func TestSelfhostDstURLHasSlashBetweenBucketAndKey(t *testing.T) {
 	badURLFragment := fmt.Sprintf("amazonaws.com/%smy-show/", bucket)
 	if strings.Contains(out, badURLFragment) {
 		t.Errorf("Dst URL has missing slash (regression): %q found in output", badURLFragment)
+	}
+}
+
+func TestAudioUploadWithoutHostingFails(t *testing.T) {
+	feedRoot := t.TempDir()
+	writeFeed(t, feedRoot, "my-show", `{"title":"My Show"}`)
+	out, code := run("audio", "upload", "my-show", "--feed-dir", feedRoot)
+	if code == 0 || !strings.Contains(out, "no bucket configured") {
+		t.Errorf("expected missing bucket error, exit %d:\n%s", code, out)
 	}
 }
 
@@ -741,23 +985,22 @@ func s3TestBucket(t *testing.T) string {
 	return "test-bucket"
 }
 
-// writeHostedFeed writes a generated feed (feed.json, feed.csv, feed.xml,
+// writeHostedFeed writes a built feed (feed.json, feed.csv, feed.xml,
 // image.jpg) under feedRoot/slug and a hosting.json pointing at bucket/prefix,
 // served from publicURL.
 func writeHostedFeed(t *testing.T, feedRoot, slug, bucket, prefix, publicURL string) {
 	t.Helper()
-	dir := filepath.Join(feedRoot, slug)
-	os.MkdirAll(dir, 0755)
+	audio := audioServer(t)
 	os.WriteFile(filepath.Join(feedRoot, "hosting.json"), []byte(fmt.Sprintf(
 		`{"bucket":%q,"region":"eu-west-2","prefix":%q,"public_url":%q}`,
 		bucket, prefix, publicURL)), 0644)
-	os.WriteFile(filepath.Join(dir, "feed.json"), []byte(`{"title":"Hosted Show","author":"Someone & Co"}`), 0644)
-	os.WriteFile(filepath.Join(dir, "feed.csv"), []byte(
-		"title\x1fdescription\x1fdate\x1furl\n"+
-			"Ep1\x1f\x1fSat, 29 Jun 2002 03:00:00 GMT\x1fhttps://example.com/ep1.mp3\n"+
-			"Ep2\x1f\x1fSat, 06 Jul 2002 03:00:00 GMT\x1fhttps://example.com/ep2.mp3\n"), 0644)
-	os.WriteFile(filepath.Join(dir, "feed.xml"), []byte("<rss/>\n"), 0644)
+	dir := writeFeed(t, feedRoot, slug, `{"title":"Hosted Show","author":"Someone & Co"}`,
+		episode("Ep1", "Sat, 29 Jun 2002 03:00:00 GMT", audio+"/ep1.mp3"),
+		episode("Ep2", "Sat, 06 Jul 2002 03:00:00 GMT", audio+"/ep2.mp3"))
 	os.WriteFile(filepath.Join(dir, "image.jpg"), []byte("not really a jpeg"), 0644)
+	if out, code := run("build", slug, "--feed-dir", feedRoot); code != 0 {
+		t.Fatalf("build exited %d:\n%s", code, out)
+	}
 }
 
 func TestPublishUploadsFeedsAndSkipsUnchanged(t *testing.T) {
@@ -790,9 +1033,9 @@ func TestPublishUploadsFeedsAndSkipsUnchanged(t *testing.T) {
 	}
 
 	// The published feed files must not count as orphaned episodes.
-	out, code = run("selfhost-orphans", "hosted-show", "--feed-dir", feedRoot, "--fail-on-orphans")
+	out, code = run("audio", "prune", "hosted-show", "--feed-dir", feedRoot, "--fail-on-orphans")
 	if code != 0 {
-		t.Fatalf("selfhost-orphans exited %d (feed files reported as orphans?):\n%s", code, out)
+		t.Fatalf("audio prune exited %d (feed files reported as orphans?):\n%s", code, out)
 	}
 	if !strings.Contains(out, "No orphaned self-hosted files found.") {
 		t.Errorf("expected no orphans:\n%s", out)
@@ -842,6 +1085,39 @@ func TestPublishFailsWhenPublicURLUnreachable(t *testing.T) {
 	}
 }
 
+// TestPublishRefusesStaleFeed checks publish refuses, before touching the
+// bucket, a feed whose inputs changed since it was built.
+func TestPublishRefusesStaleFeed(t *testing.T) {
+	feedRoot := t.TempDir()
+	writeHostedFeed(t, feedRoot, "hosted-show", "my-bucket", "", "http://127.0.0.1:1")
+	writeFeed(t, feedRoot, "other-show", `{"title":"Other Show"}`)
+
+	csvPath := filepath.Join(feedRoot, "hosted-show", "feed.csv")
+	csv, _ := os.ReadFile(csvPath)
+	os.WriteFile(csvPath, append(csv, []byte(episode("Ep3", "Sat, 13 Jul 2002 03:00:00 GMT", "https://example.com/ep3.mp3")+"\n")...), 0644)
+
+	for _, args := range [][]string{{"publish"}, {"publish", "hosted-show"}, {"publish", "--dry-run"}} {
+		out, code := run(append(args, "--feed-dir", feedRoot)...)
+		if code == 0 {
+			t.Fatalf("expected %v to refuse a stale feed:\n%s", args, out)
+		}
+		if !strings.Contains(out, "feed.xml is out of date for hosted-show; run podcastinator build hosted-show first") {
+			t.Errorf("expected %v to name the stale feed:\n%s", args, out)
+		}
+	}
+
+	// Changing hosting.json makes the feed stale too, as its URLs come from it.
+	if out, code := run("build", "--feed-dir", feedRoot); code == 0 {
+		t.Fatalf("build should fail on Ep3's unreachable URL:\n%s", out)
+	}
+	os.WriteFile(csvPath, csv, 0644)
+	os.WriteFile(filepath.Join(feedRoot, "hosting.json"), []byte(`{"bucket":"my-bucket","public_url":"https://elsewhere.example.com"}`), 0644)
+	out, code := run("publish", "--feed-dir", feedRoot)
+	if code == 0 || !strings.Contains(out, "out of date for hosted-show") {
+		t.Errorf("expected a hosting.json change to make the feed stale, exit %d:\n%s", code, out)
+	}
+}
+
 func TestPublishWithoutBucketFails(t *testing.T) {
 	feedRoot := t.TempDir()
 	out, code := run("publish", "--feed-dir", feedRoot)
@@ -850,36 +1126,6 @@ func TestPublishWithoutBucketFails(t *testing.T) {
 	}
 	if !strings.Contains(out, "no bucket configured") {
 		t.Errorf("expected missing bucket error:\n%s", out)
-	}
-}
-
-func TestCSV2RSSUsesHostingURLs(t *testing.T) {
-	audio := audioServer(t)
-	feedRoot := t.TempDir()
-	feedDir := filepath.Join(feedRoot, "hosted-show")
-	os.MkdirAll(feedDir, 0755)
-	os.WriteFile(filepath.Join(feedRoot, "hosting.json"), []byte(
-		`{"bucket":"my-bucket","region":"eu-west-2","public_url":"https://podcasts.example.com"}`), 0644)
-	os.WriteFile(filepath.Join(feedDir, "feed.json"), []byte(`{"title":"Hosted Show"}`), 0644)
-	os.WriteFile(filepath.Join(feedDir, "feed.csv"), []byte(
-		"title\x1fdescription\x1fdate\x1furl\n"+
-			"Ep1\x1f\x1fSat, 29 Jun 2002 03:00:00 GMT\x1f"+audio+"/ep1.mp3\n"), 0644)
-
-	out, code := run("csv2rss", filepath.Join(feedDir, "feed.csv"))
-	if code != 0 {
-		t.Fatalf("csv2rss exited %d:\n%s", code, out)
-	}
-	xml, _ := os.ReadFile(filepath.Join(feedDir, "feed.xml"))
-	src := string(xml)
-	base := "https://podcasts.example.com/hosted-show/"
-	for _, want := range []string{
-		`<atom:link href="` + base + `feed.xml"`,
-		`<itunes:new-feed-url>` + base + `feed.xml</itunes:new-feed-url>`,
-		`<url>` + base + `image.jpg</url>`,
-	} {
-		if !strings.Contains(src, want) {
-			t.Errorf("expected %q in feed.xml:\n%s", want, src)
-		}
 	}
 }
 
