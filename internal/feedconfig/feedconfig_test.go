@@ -148,3 +148,22 @@ func TestLoadURLs(t *testing.T) {
 		t.Errorf("FeedURL = %q; want %q", cfg.FeedURL, "https://example.com/show.xml")
 	}
 }
+
+func TestLoadType(t *testing.T) {
+	for _, typ := range []string{"", "episodic", "serial"} {
+		dir := t.TempDir()
+		os.WriteFile(filepath.Join(dir, feedconfig.Filename), []byte(`{"title":"Show","type":"`+typ+`"}`), 0644)
+		cfg, err := feedconfig.Load(dir)
+		if err != nil {
+			t.Errorf("type %q: %v", typ, err)
+		} else if cfg.Type != typ {
+			t.Errorf("Type = %q; want %q", cfg.Type, typ)
+		}
+	}
+
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, feedconfig.Filename), []byte(`{"title":"Show","type":"Serial"}`), 0644)
+	if _, err := feedconfig.Load(dir); err == nil || !strings.Contains(err.Error(), `"type" must be "episodic" or "serial"`) {
+		t.Errorf("expected an invalid type to be rejected, got %v", err)
+	}
+}

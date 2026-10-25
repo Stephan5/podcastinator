@@ -2,6 +2,13 @@
 
 Newest first. A release's description on GitHub is its section here.
 
+## Unreleased
+
+### Added
+
+* `"type": "serial"` in `feed.json` marks a show as meant to be heard in order, as `<itunes:type>serial</itunes:type>`, which Apple Podcasts and other apps that honour it list oldest first. Leave it out, or set `"episodic"`, for newest first as before.
+* Every episode carries an `<itunes:episode>` number, its position in the CSV, which Apple requires for serial shows.
+
 ## 0.6.0
 
 ### Removed

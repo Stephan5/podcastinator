@@ -28,6 +28,9 @@ type Config struct {
 	// Source is the RSS feed the episodes were imported from, which update
 	// re-fetches for new episodes.
 	Source string `json:"source,omitempty"`
+	// Type is the show's itunes:type: "episodic" (newest first, the default)
+	// or "serial" (oldest first, for shows meant to be heard in order).
+	Type string `json:"type,omitempty"`
 }
 
 // DelimiterRune returns the configured delimiter as a rune,
@@ -56,6 +59,11 @@ func Load(dir string) (*Config, error) {
 	}
 	if cfg.Title == "" {
 		return nil, fmt.Errorf("%s: \"title\" is required", path)
+	}
+	switch cfg.Type {
+	case "", "episodic", "serial":
+	default:
+		return nil, fmt.Errorf("%s: \"type\" must be \"episodic\" or \"serial\", not %q", path, cfg.Type)
 	}
 	return &cfg, nil
 }

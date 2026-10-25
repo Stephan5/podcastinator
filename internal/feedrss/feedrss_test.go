@@ -1010,3 +1010,42 @@ func TestBuildGUIDs(t *testing.T) {
 		}
 	}
 }
+
+func TestBuildItunesTypeAndEpisodeNumbers(t *testing.T) {
+	opts := feedrss.FeedOptions{
+		Title:                "Test",
+		FeedURL:              "https://podcasts.example.com/test/feed.xml",
+		ImageURL:             "https://podcasts.example.com/test/image.jpg",
+		ContentLengthFetcher: mockFetcher("0"),
+	}
+	episodic, err := feedrss.Build(opts, testRecords, io.Discard)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	if strings.Contains(string(episodic), "<itunes:type>") {
+		t.Error("itunes:type should be left out when no type is set")
+	}
+
+	opts.Type = "serial"
+	serial, err := feedrss.Build(opts, testRecords, io.Discard)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	src := string(serial)
+	assertContains(t, src, "\n    <itunes:type>serial</itunes:type>\n")
+	if err := xml.Unmarshal(serial, new(struct{})); err != nil {
+		t.Errorf("feed isn't valid XML: %v", err)
+	}
+
+	// Every episode is numbered in CSV order, matching its title's prefix.
+	numbers := regexp.MustCompile(`<itunes:episode>(\d+)</itunes:episode>`).FindAllStringSubmatch(src, -1)
+	if len(numbers) != len(testRecords) {
+		t.Fatalf("got %d itunes:episode tags; want %d", len(numbers), len(testRecords))
+	}
+	for i, m := range numbers {
+		if m[1] != fmt.Sprint(i+1) {
+			t.Errorf("episode %d numbered %s", i+1, m[1])
+		}
+	}
+	assertContains(t, src, "<title>1: 2002-06-29</title>\n      <itunes:episode>1</itunes:episode>")
+}
