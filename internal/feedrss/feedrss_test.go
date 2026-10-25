@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -222,6 +224,114 @@ func TestBuildFailsWhenContentLengthIsEmpty(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "empty Content-Length") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func manyRecords(n int) []feedcsv.Record {
+	records := make([]feedcsv.Record, n)
+	for i := range records {
+		records[i] = feedcsv.Record{
+			Title: fmt.Sprintf("Ep%d", i+1),
+			Date:  "Sat, 29 Jun 2002 03:00:00 GMT",
+			URL:   fmt.Sprintf("https://example.com/%d.mp3", i+1),
+		}
+	}
+	return records
+}
+
+func TestBuildFetchesConcurrentlyUpToLimit(t *testing.T) {
+	var inFlight, peak atomic.Int32
+	opts := feedrss.FeedOptions{
+		Title:       "My Show",
+		RepoDir:     "my-show",
+		FeedURL:     "https://podcasts.example.com/my-show/feed.xml",
+		ImageURL:    "https://podcasts.example.com/my-show/image.jpg",
+		Concurrency: 4,
+		ContentLengthFetcher: func(url string) (string, error) {
+			n := inFlight.Add(1)
+			defer inFlight.Add(-1)
+			for {
+				p := peak.Load()
+				if n <= p || peak.CompareAndSwap(p, n) {
+					break
+				}
+			}
+			time.Sleep(5 * time.Millisecond)
+			// Each episode's length is its number, so order can be checked.
+			return strings.TrimSuffix(strings.TrimPrefix(url, "https://example.com/"), ".mp3"), nil
+		},
+	}
+	opts.SetDefaults()
+
+	xmlBytes, err := feedrss.Build(opts, manyRecords(20), io.Discard)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	if p := peak.Load(); p < 2 || p > 4 {
+		t.Errorf("peak concurrent fetches = %d, want 2 to 4", p)
+	}
+	lengths := regexp.MustCompile(`length="(\d+)"`).FindAllStringSubmatch(string(xmlBytes), -1)
+	if len(lengths) != 20 {
+		t.Fatalf("got %d enclosures, want 20", len(lengths))
+	}
+	for i, m := range lengths {
+		if m[1] != fmt.Sprint(i+1) {
+			t.Errorf("enclosure %d has length %s, want %d", i+1, m[1], i+1)
+		}
+	}
+}
+
+func TestBuildReportsFirstFailedFetchAndStopsEarly(t *testing.T) {
+	var mu sync.Mutex
+	var calls int
+	opts := feedrss.FeedOptions{
+		Title:       "My Show",
+		RepoDir:     "my-show",
+		FeedURL:     "https://podcasts.example.com/my-show/feed.xml",
+		ImageURL:    "https://podcasts.example.com/my-show/image.jpg",
+		Concurrency: 1,
+		ContentLengthFetcher: func(url string) (string, error) {
+			mu.Lock()
+			calls++
+			mu.Unlock()
+			if strings.HasSuffix(url, "/3.mp3") || strings.HasSuffix(url, "/5.mp3") {
+				return "", fmt.Errorf("HTTP 403")
+			}
+			return "1", nil
+		},
+	}
+	opts.SetDefaults()
+
+	_, err := feedrss.Build(opts, manyRecords(50), io.Discard)
+	if err == nil {
+		t.Fatal("expected Build to fail")
+	}
+	if !strings.Contains(err.Error(), `item 3 ("Ep3")`) {
+		t.Errorf("error should name item 3, got: %v", err)
+	}
+	// With one at a time, nothing should start after item 3 fails.
+	if calls != 3 {
+		t.Errorf("made %d fetches, want 3", calls)
+	}
+}
+
+func TestBuildValidatesDatesBeforeFetching(t *testing.T) {
+	opts := feedrss.FeedOptions{
+		Title:    "My Show",
+		RepoDir:  "my-show",
+		FeedURL:  "https://podcasts.example.com/my-show/feed.xml",
+		ImageURL: "https://podcasts.example.com/my-show/image.jpg",
+		ContentLengthFetcher: func(url string) (string, error) {
+			t.Errorf("fetched %s despite a bad date", url)
+			return "1", nil
+		},
+	}
+	opts.SetDefaults()
+
+	records := manyRecords(5)
+	records[3].Date = "2002-06-29"
+	if _, err := feedrss.Build(opts, records, io.Discard); err == nil {
+		t.Fatal("expected Build to fail on a bad date")
 	}
 }
 
