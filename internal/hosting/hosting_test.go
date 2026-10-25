@@ -91,3 +91,30 @@ func TestURLs(t *testing.T) {
 		})
 	}
 }
+
+func TestKeyForURL(t *testing.T) {
+	cdn := &hosting.Config{Bucket: "my-bucket", Region: "eu-west-2", PublicURL: "https://podcasts.example.com"}
+	plain := &hosting.Config{Bucket: "my-bucket", Region: "eu-west-2"}
+	cases := []struct {
+		cfg     *hosting.Config
+		url     string
+		wantKey string
+		wantOK  bool
+	}{
+		{cdn, "https://podcasts.example.com/show/001-ep.mp3", "show/001-ep.mp3", true},
+		{cdn, "https://s3.eu-west-2.amazonaws.com/my-bucket/show/001-ep.mp3", "show/001-ep.mp3", true},
+		{cdn, "https://podcasts.example.com/show/my%20ep.mp3?x=1", "show/my ep.mp3", true},
+		{cdn, "https://s3.eu-west-2.amazonaws.com/other-bucket/show/001-ep.mp3", "", false},
+		{cdn, "https://podcasts.example.com.evil.com/show/001-ep.mp3", "", false},
+		{cdn, "https://cdn.example.com/show/001-ep.mp3", "", false},
+		{cdn, "https://podcasts.example.com/", "", false},
+		{plain, "https://s3.eu-west-2.amazonaws.com/my-bucket/show/001-ep.mp3", "show/001-ep.mp3", true},
+		{plain, "https://podcasts.example.com/show/001-ep.mp3", "", false},
+	}
+	for _, c := range cases {
+		key, ok := c.cfg.KeyForURL(c.url)
+		if key != c.wantKey || ok != c.wantOK {
+			t.Errorf("KeyForURL(%q) = %q, %v; want %q, %v", c.url, key, ok, c.wantKey, c.wantOK)
+		}
+	}
+}

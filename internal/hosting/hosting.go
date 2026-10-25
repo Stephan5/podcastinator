@@ -5,6 +5,7 @@ package hosting
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -24,9 +25,9 @@ type Config struct {
 	Region string `json:"region,omitempty"`
 	// Prefix is an optional S3 key prefix (no leading/trailing slash).
 	Prefix string `json:"prefix,omitempty"`
-	// PublicURL is the base URL that serves the bucket root, used for feed.xml,
-	// image.jpg and the index files. Defaults to the path-style S3 URL. Episode
-	// audio always uses the S3 URL, since episode GUIDs are derived from it.
+	// PublicURL is the base URL that serves the bucket root, used for
+	// everything in it: feeds, cover art, the index files and episode audio.
+	// Defaults to the path-style S3 URL.
 	PublicURL string `json:"public_url,omitempty"`
 }
 
@@ -92,4 +93,21 @@ func (c *Config) BaseURL() string {
 // e.g. URL("example-show/feed.xml").
 func (c *Config) URL(rel string) string {
 	return c.BaseURL() + "/" + c.Key(rel)
+}
+
+// KeyForURL returns the key of the object in this bucket that rawURL points
+// at, by either its public URL or its S3 URL, and false for a URL anywhere
+// else. Episodes uploaded before audio was served from the public URL still
+// have their S3 URL.
+func (c *Config) KeyForURL(rawURL string) (string, bool) {
+	u, _, _ := strings.Cut(rawURL, "?")
+	for _, base := range []string{c.BaseURL(), c.S3URL()} {
+		if rest, ok := strings.CutPrefix(u, base+"/"); ok && rest != "" {
+			if key, err := url.PathUnescape(rest); err == nil {
+				return key, true
+			}
+			return rest, true
+		}
+	}
+	return "", false
 }
