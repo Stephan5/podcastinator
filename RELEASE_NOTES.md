@@ -1,4 +1,4 @@
-# Changelog
+# Release notes
 
 Newest first. A release's description on GitHub is its section here.
 

@@ -1,5 +1,6 @@
 {
   "title": "Example Show",
   "description": "A two-episode feed showing the layout podcastinator expects.",
-  "author": "Example Author"
+  "author": "Example Author",
+  "website": "https://example.com/example-show"
 }

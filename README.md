@@ -27,7 +27,7 @@ macOS blocks binaries downloaded from the internet that aren't signed. Clear the
 feed/
   hosting.json        ← where feeds are hosted (shared by every feed)
   example-show/
-    feed.json         ← title, description, author
+    feed.json         ← title, description, author, website
     feed.csv          ← one row per episode
     image.jpg         ← cover art (Apple wants 1400–3000px square)
 ```
@@ -43,7 +43,7 @@ Commands look for `./feed` in the current directory; `--feed-dir` points them el
 
 ### The CSV
 
-Columns are `title`, `description`, `date`, `url`, separated by the ASCII unit separator (`\x1F`) by default so titles and descriptions can contain commas and quotes without escaping. There's no quoting at all. Dates must be RFC 2822 (`Mon, 06 Jan 2025 09:00:00 GMT`); `pubdate` converts other formats. An empty description becomes `<title> - Episode <n> of <show>`.
+Columns are `title`, `description`, `date`, `url`, separated by the ASCII unit separator (`\x1F`) by default so titles and descriptions can contain commas and quotes without escaping. There's no quoting at all. Dates must be RFC 2822 (`Mon, 06 Jan 2025 09:00:00 GMT`); `pubdate` converts other formats. An empty description becomes `<title> - Episode <n> of <show>`. Every description ends with a "Generated using Stephan5/podcastinator" link.
 
 Episodes are numbered in CSV order, and each episode's URL is its GUID, so changing an episode's URL makes podcast apps treat it as a new episode.
 
@@ -53,11 +53,22 @@ Episodes are numbered in CSV order, and each episode's URL is its GUID, so chang
 {
   "title": "Example Show",
   "description": "A two-episode feed showing the layout podcastinator expects.",
-  "author": "Example Author"
+  "author": "Example Author",
+  "website": "https://example.com/example-show"
 }
 ```
 
-Optional fields: `delimiter` (default `\u001f`), `website` (defaults to this repo), `image` and `feed`, the cover art and feed URLs (default to their location in the bucket, from `hosting.json`).
+| Key           | Required | What it is                                                                                     |
+|---------------|----------|------------------------------------------------------------------------------------------------|
+| `title`       | Yes      | The show's name.                                                                               |
+| `description` | No       | The show's description.                                                                        |
+| `author`      | No       | Who makes it.                                                                                  |
+| `website`     | No       | The show's own site, the feed's `<link>`. Defaults to this repo.                               |
+| `image`       | No       | The cover art's URL. Defaults to `<public_url>/<slug>/image.jpg`, from `hosting.json`.         |
+| `feed`        | No       | The feed's own URL, its self link. Defaults to `<public_url>/<slug>/feed.xml`, from `hosting.json`. |
+| `delimiter`   | No       | The CSV's field separator. Defaults to the unit separator, `"\u001f"`.                           |
+
+Flags passed to `csv2rss` override any of them.
 
 ## Hosting
 
@@ -211,7 +222,7 @@ podcastinator csv2rss ./feed/example-show/feed.csv
 podcastinator csv2rss ./feed/example-show/feed.csv --title "Override Title"
 ```
 
-Writes `feed.xml` alongside the CSV, using `feed.json` from the same directory; flags override it. The feed and image URLs come from `--feed-url`/`--image-url`, then `feed.json`, then their location in the bucket from `hosting.json`, and it fails if none of those supplies them. Sends a `HEAD` request for each episode to fill in its length. Skips writing if the feed content hasn't changed.
+Writes `feed.xml` alongside the CSV, using `feed.json` from the same directory; flags override it. The feed and image URLs come from `--feed-url`/`--image-url`, then `feed` and `image` in `feed.json`, then their location in the bucket from `hosting.json`, and it fails if none of those supplies them. The website link comes from `--website`, then `website` in `feed.json`, and defaults to this repo. Sends a `HEAD` request for each episode to fill in its length. Skips writing if the feed content hasn't changed.
 
 ### `rss2csv` — RSS → CSV
 
@@ -277,14 +288,14 @@ The `publish` integration tests need an S3 endpoint (`AWS_ENDPOINT_URL`) and ski
 
 ### Releasing
 
-Set `version` in [`cmd/podcastinator/version.go`](cmd/podcastinator/version.go) and add a section at the top of [`CHANGELOG.md`](CHANGELOG.md), headed `## <version>`, and commit them. Older versions' sections stay below as the history. Then push a tag that matches the version:
+Set `version` in [`cmd/podcastinator/version.go`](cmd/podcastinator/version.go) and add a section at the top of [`RELEASE_NOTES.md`](RELEASE_NOTES.md), headed `## <version>`, and commit them. Older versions' sections stay below as the history. Then push a tag that matches the version:
 
 ```shell
 git tag v0.3.0
 git push origin v0.3.0
 ```
 
-That runs the tests, builds binaries for Linux and macOS, and attaches them to a GitHub release with that version's section as its description (see [`release.yml`](.github/workflows/release.yml)). The workflow refuses to release if the tag doesn't match the version, or the changelog has no section for it. Push the tag rather than making the release on GitHub, which would leave the workflow nothing to create.
+That runs the tests, builds binaries for Linux and macOS, and attaches them to a GitHub release with that version's section as its description (see [`release.yml`](.github/workflows/release.yml)). The workflow refuses to release if the tag doesn't match the version, or the release notes have no section for it. Push the tag rather than making the release on GitHub, which would leave the workflow nothing to create.
 
 ## License
 
