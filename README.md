@@ -8,7 +8,7 @@ It's handy for archiving shows that are disappearing, stitching together episode
 ## Install
 
 ```shell
-go install github.com/Stephan5/podcastinator/cmd/podcastinator@v0.7.0
+go install github.com/Stephan5/podcastinator/cmd/podcastinator@v0.8.0
 ```
 
 Or download a binary for Linux or macOS from the [latest release](https://github.com/Stephan5/podcastinator/releases/latest), or build from a clone, which writes `build/podcastinator`:
