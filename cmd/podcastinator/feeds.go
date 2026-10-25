@@ -136,12 +136,14 @@ func selectFeeds(feedDirAbs string, slugs []string, exclude []string) ([]feed, e
 	return feeds, nil
 }
 
-// inputsHash is a digest of everything build reads to make a feed's
-// feed.xml: its CSV, its feed.json and hosting.json. build stamps it into
-// feed.xml and publish refuses a feed.xml whose stamp doesn't match, so a
-// feed can't be published without rebuilding after its inputs change.
+// inputsHash is a digest of everything that decides a feed's feed.xml: its
+// CSV, its feed.json, hosting.json and feedrss.FormatVersion. build stamps it
+// into feed.xml and publish refuses a feed.xml whose stamp doesn't match, so a
+// feed can't be published without rebuilding after its inputs change or a
+// new podcastinator changes what build makes of them.
 func inputsHash(feedDirAbs string, f feed) (string, error) {
 	h := sha256.New()
+	binary.Write(h, binary.BigEndian, int64(feedrss.FormatVersion)) //nolint:errcheck
 	for _, path := range []string{
 		f.csvPath(),
 		filepath.Join(f.dir, feedconfig.Filename),

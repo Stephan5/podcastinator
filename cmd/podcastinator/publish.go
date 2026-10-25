@@ -160,7 +160,8 @@ func loadLocalFeeds(feedDirAbs string) ([]feed, error) {
 }
 
 // checkBuilt fails unless every feed's feed.xml was built from its current
-// inputs, so a CSV edited without a rebuild can't be published stale.
+// inputs, by a version that builds them the same way, so a CSV edited without
+// a rebuild can't be published stale.
 func checkBuilt(feedDirAbs string, feeds []feed) error {
 	var stale []string
 	for _, f := range feeds {

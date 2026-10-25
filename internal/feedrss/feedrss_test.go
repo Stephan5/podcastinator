@@ -976,6 +976,37 @@ func TestStampedInputs(t *testing.T) {
 	}
 }
 
+// TestFormatVersion fails when Build's output changes, so FormatVersion gets
+// bumped and feeds built by an older version count as stale. If the change is
+// deliberate, bump FormatVersion and set both constants here to the new values.
+func TestFormatVersion(t *testing.T) {
+	const wantVersion = 1
+	const wantHash = "31a192915d59b3cc178354a793d34502d89cfaaf0379e95803fc45cba067973f"
+
+	episodic, _ := buildTestFeed(t)
+	serial, err := feedrss.Build(feedrss.FeedOptions{
+		Title:                "Serial",
+		Type:                 "serial",
+		FeedURL:              "https://podcasts.example.com/serial/feed.xml",
+		ImageURL:             "https://podcasts.example.com/serial/image.jpg",
+		InputsHash:           "0123abcd",
+		ContentLengthFetcher: mockFetcher("1"),
+	}, []feedcsv.Record{
+		{Title: "Legacy", Date: "Sat, 29 Jun 2002 03:00:00 GMT", URL: "https://example.com/new/1.mp3", GUID: "https://example.com/old/1.mp3"},
+		{Title: "New", Date: "Sun, 30 Jun 2002 03:00:00 GMT", URL: "https://example.com/2.mp3", GUID: "6f1c1e0a-3b5d-4c2e-9f7a-2d8b4e6a1c3f"},
+	}, io.Discard)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+
+	got := feedrss.HashContent(append(episodic, serial...))
+	if feedrss.FormatVersion != wantVersion || got != wantHash {
+		t.Errorf("Build's output or FormatVersion changed: output hash %s, FormatVersion %d; want %s, %d. "+
+			"If the output changed on purpose, bump FormatVersion and update this test's constants to match.",
+			got, feedrss.FormatVersion, wantHash, wantVersion)
+	}
+}
+
 func TestBuildGUIDs(t *testing.T) {
 	opts := feedrss.FeedOptions{
 		Title:                "Test",

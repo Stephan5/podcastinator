@@ -25,7 +25,7 @@ func newStatusCmd() *cobra.Command {
 
   EPISODES   rows in feed.csv, and the newest episode's date
   BUILT      ok, stale (feed.csv, feed.json or hosting.json changed since the
-             last build) or missing
+             last build, or this version builds feeds differently) or missing
   AUDIO      how many episodes are hosted in the bucket in hosting.json
   SOURCE     whether feed.json has a source for update
 
