@@ -1,6 +1,7 @@
 package feedrss_test
 
 import (
+	"bytes"
 	"encoding/xml"
 	"fmt"
 	"io"
@@ -827,5 +828,40 @@ func TestStampedInputs(t *testing.T) {
 	}
 	if feedrss.HashContent(stamped) == feedrss.HashContent(unstamped) {
 		t.Error("the stamp should count as a change, so build rewrites feed.xml when only its inputs changed")
+	}
+}
+
+func TestBuildGUIDs(t *testing.T) {
+	opts := feedrss.FeedOptions{
+		Title:                "Test",
+		FeedURL:              "https://podcasts.example.com/test/feed.xml",
+		ImageURL:             "https://podcasts.example.com/test/image.jpg",
+		ContentLengthFetcher: mockFetcher("0"),
+	}
+	records := []feedcsv.Record{
+		{Title: "Legacy", Date: "Sat, 29 Jun 2002 03:00:00 GMT", URL: "https://example.com/new/1.mp3", GUID: "https://example.com/old/1.mp3"},
+		{Title: "New", Date: "Sun, 30 Jun 2002 03:00:00 GMT", URL: "https://example.com/2.mp3", GUID: "6f1c1e0a-3b5d-4c2e-9f7a-2d8b4e6a1c3f"},
+		{Title: "Unassigned", Date: "Mon, 01 Jul 2002 03:00:00 GMT", URL: "https://example.com/3.mp3?a=1&b=2"},
+	}
+	xmlBytes, err := feedrss.Build(opts, records, io.Discard)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	src := string(xmlBytes)
+	// A URL GUID stays a plain permalink, even once the audio has moved.
+	assertContains(t, src, `<guid>https://example.com/old/1.mp3</guid>`)
+	assertContains(t, src, `<enclosure url="https://example.com/new/1.mp3"`)
+	assertContains(t, src, `<guid isPermaLink="false">6f1c1e0a-3b5d-4c2e-9f7a-2d8b4e6a1c3f</guid>`)
+	// No GUID means the URL, as 0.3.0 wrote it.
+	assertContains(t, src, `<guid>https://example.com/3.mp3?a=1&amp;amp;b=2</guid>`)
+
+	parsed, err := feedrss.Parse(bytes.NewReader(xmlBytes))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	for i, want := range []string{"https://example.com/old/1.mp3", "6f1c1e0a-3b5d-4c2e-9f7a-2d8b4e6a1c3f", "https://example.com/3.mp3?a=1&amp;b=2"} {
+		if parsed.Records[i].GUID != want {
+			t.Errorf("parsed record %d GUID = %q; want %q", i, parsed.Records[i].GUID, want)
+		}
 	}
 }

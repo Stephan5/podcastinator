@@ -51,9 +51,9 @@ podcastinator publish
 
 ### The CSV
 
-Columns are `title`, `description`, `date`, `url`, separated by the ASCII unit separator (`\x1F`) by default so titles and descriptions can contain commas and quotes without escaping. There's no quoting at all. Descriptions are stored HTML-escaped (`&lt;p&gt;`), as they go into the feed verbatim. Dates must be RFC 2822 (`Mon, 06 Jan 2025 09:00:00 GMT`); `dates` converts other formats. An empty description becomes `<title> - Episode <n> of <show>`. Every description ends with a "Generated using Stephan5/podcastinator" link.
+Columns are `title`, `description`, `date`, `url`, `guid`, separated by the ASCII unit separator (`\x1F`) by default so titles and descriptions can contain commas and quotes without escaping. There's no quoting at all. Descriptions are stored HTML-escaped (`&lt;p&gt;`), as they go into the feed verbatim. Dates must be RFC 2822 (`Mon, 06 Jan 2025 09:00:00 GMT`); `dates` converts other formats. An empty description becomes `<title> - Episode <n> of <show>`. Every description ends with a "Generated using Stephan5/podcastinator" link.
 
-Episodes are numbered in CSV order, and each episode's URL is its GUID, so changing an episode's URL makes podcast apps treat it as a new episode.
+Episodes are numbered in CSV order. The `guid` is what podcast apps identify an episode by, so it must never change. Leave it empty on a new row and `build` fills it in with a UUID; after that, the episode's URL can change (say, when `audio upload` moves it into your bucket) without apps seeing it as new. CSVs without the column still work, and `build` adds it. Episodes already published before the column existed keep their URL as their GUID, taken from the existing `feed.xml`, so subscribers don't see them again.
 
 ### `feed.json`
 
@@ -89,7 +89,7 @@ Hosting is configured once, in `feed/hosting.json`:
 }
 ```
 
-`public_url` is the address that serves the bucket root, and defaults to `https://s3.<region>.amazonaws.com/<bucket>`. It applies to feeds, cover art and the index files. Episode audio uploaded by `audio upload` keeps its S3 URL, because that URL is the episode's GUID. The optional `prefix` puts everything under an S3 key prefix (default none). `podcastinator init --bucket <bucket>` writes the file for you.
+`public_url` is the address that serves the bucket root, and defaults to `https://s3.<region>.amazonaws.com/<bucket>`. It applies to feeds, cover art and the index files. Episode audio uploaded by `audio upload` is served from its S3 URL. The optional `prefix` puts everything under an S3 key prefix (default none). `podcastinator init --bucket <bucket>` writes the file for you.
 
 The bucket ends up laid out as:
 
@@ -233,7 +233,7 @@ podcastinator import https://example.com/podcast.rss
 podcastinator import ~/Downloads/show.xml --slug my-show
 ```
 
-Fetches the feed and writes `feed/<slug>/feed.csv` (oldest episode first), `feed.json` (title, description, author, website and `source`) and `image.jpg`, preferring `itunes:image` and converting PNGs to JPEG. The slug comes from the show's title unless `--slug` says otherwise. It won't overwrite an existing feed without `--force`, which would lose any self-hosted URLs in its CSV.
+Fetches the feed and writes `feed/<slug>/feed.csv` (oldest episode first), `feed.json` (title, description, author, website and `source`) and `image.jpg`, preferring `itunes:image` and converting PNGs to JPEG. Every episode gets a new UUID as its GUID. The slug comes from the show's title unless `--slug` says otherwise. It won't overwrite an existing feed without `--force`, which gives every episode a new GUID, so subscribers would see them all again.
 
 ### `update` — pick up new episodes
 
@@ -252,7 +252,7 @@ podcastinator build example-show another-show     # just these
 podcastinator build --exclude some-feed,another   # all but these
 ```
 
-Writes `feed/<slug>/feed.xml` from its `feed.csv` and `feed.json`. The feed and image URLs come from `feed` and `image` in `feed.json`, then their location in the bucket from `hosting.json`, and it fails if neither supplies them. Sends a `HEAD` request for each episode to fill in its length. Skips writing if the feed hasn't changed. Each `feed.xml` ends with a comment holding a hash of its inputs, which `publish` and `status` check.
+Writes `feed/<slug>/feed.xml` from its `feed.csv` and `feed.json`. The feed and image URLs come from `feed` and `image` in `feed.json`, then their location in the bucket from `hosting.json`, and it fails if neither supplies them. Gives any episode without a GUID one, writing it to the CSV. Sends a `HEAD` request for each episode to fill in its length. Skips writing if the feed hasn't changed. Each `feed.xml` ends with a comment holding a hash of its inputs, which `publish` and `status` check.
 
 ### `dates` — reformat dates
 
@@ -268,7 +268,7 @@ Parses the CSV's date column with a strftime format and rewrites it as RFC 2822.
 podcastinator audio upload example-show
 ```
 
-Downloads each episode that isn't already in the bucket, uploads it to `<prefix>/<slug>/` with a numbered, slugified name (`001-episode-title.mp3`) and an audio `Content-Type`, and rewrites the CSV with the new URLs. Local `file://` URLs, relative to the feed directory, are uploaded directly. Since URLs are GUIDs, do this before anyone subscribes, or they'll see every episode again.
+Downloads each episode that isn't already in the bucket, uploads it to `<prefix>/<slug>/` with a numbered, slugified name (`001-episode-title.mp3`) and an audio `Content-Type`, and rewrites the CSV with the new URLs. Local `file://` URLs, relative to the feed directory, are uploaded directly. Episodes keep their GUIDs, so subscribers don't see moved episodes as new.
 
 ### `audio prune` — find unreferenced audio
 

@@ -40,10 +40,9 @@ directory from it:
 
 The feed is named after the show's title unless --slug says otherwise.
 
-Episode URLs are their GUIDs, so if you're going to host the audio yourself,
-run "audio upload" before anyone subscribes, or they'll see every episode
-twice. --force overwrites an existing feed, losing any self-hosted URLs in its
-CSV.
+Every episode gets a new UUID as its GUID. --force overwrites an existing
+feed, giving every episode a new GUID, so subscribers would see them all
+again.
 
 Examples:
   podcastinator import https://example.com/podcast.rss
@@ -123,7 +122,7 @@ func runImport(feedDirAbs, source, slug string, force bool) error {
 	}
 
 	fmt.Printf("Imported %s. Next:\n", dir)
-	fmt.Printf("  podcastinator audio upload %s   # if hosting the audio, before anyone subscribes\n", slug)
+	fmt.Printf("  podcastinator audio upload %s   # if hosting the audio\n", slug)
 	fmt.Printf("  podcastinator build %s\n", slug)
 	fmt.Printf("  podcastinator publish %s\n", slug)
 	return nil
@@ -259,7 +258,8 @@ func httpGet(url string) ([]byte, error) {
 
 // cleanRecords makes parsed episodes safe to store in a CSV, which has no
 // quoting: newlines and the delimiter become spaces. Descriptions are stored
-// HTML-escaped, as build writes them into the feed verbatim. Episodes with no
+// HTML-escaped, as build writes them into the feed verbatim. Each episode
+// gets a new UUID for its GUID, rather than the source's. Episodes with no
 // audio URL are dropped.
 func cleanRecords(records []feedcsv.Record, delim rune) []feedcsv.Record {
 	flatten := strings.NewReplacer("\r\n", " ", "\n", " ", "\r", " ", string(delim), " ")
@@ -278,6 +278,7 @@ func cleanRecords(records []feedcsv.Record, delim rune) []feedcsv.Record {
 			Description: escape.Replace(clean(rec.Description)),
 			Date:        clean(rec.Date),
 			URL:         rec.URL,
+			GUID:        newUUID(),
 		})
 	}
 	return out

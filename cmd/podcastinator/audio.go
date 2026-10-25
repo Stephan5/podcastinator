@@ -43,8 +43,8 @@ named NNN-slugified-title.ext, and rewrites the CSV with the new URLs.
   - a remote http(s) URL: downloaded and uploaded
   - a local file:// URL (relative to the feed directory): uploaded
 
-Episode URLs are their GUIDs, so do this before anyone subscribes, or they'll
-see every episode again. Run build afterwards.`,
+Episodes keep their GUIDs, so subscribers don't see moved episodes as new.
+Run build afterwards.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			feedDirAbs, err := resolveFeedDir()
@@ -69,6 +69,10 @@ func runAudioUpload(ctx context.Context, f feed, host *hosting.Config) error {
 	keyRoot := host.KeyRoot(f.slug)
 	baseHTTPDst := host.S3URL() + "/" + keyRoot
 
+	// Fix each episode's GUID before its URL changes.
+	if err := ensureGUIDs(f); err != nil {
+		return err
+	}
 	records, err := f.records()
 	if err != nil {
 		return fmt.Errorf("read CSV: %w", err)
@@ -177,12 +181,8 @@ func runAudioUpload(ctx context.Context, f feed, host *hosting.Config) error {
 			return fmt.Errorf("item %d: unknown URL scheme: %q", num, srcURL)
 		}
 
-		updated[i] = feedcsv.Record{
-			Title:       rec.Title,
-			Description: rec.Description,
-			Date:        rec.Date,
-			URL:         newURL,
-		}
+		rec.URL = newURL
+		updated[i] = rec
 		fmt.Printf("  → New URL: %q\n\n", newURL)
 	}
 

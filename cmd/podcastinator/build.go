@@ -20,6 +20,11 @@ func newBuildCmd() *cobra.Command {
 		Long: `Builds <feed>/feed.xml from its feed.csv (one row per episode) and feed.json
 (the show's title, description, author and website).
 
+Every episode gets a GUID, which podcast apps identify it by, the first time
+it's built: a new UUID, or the GUID it was already published with. They're
+stored in feed.csv's guid column and never change, so audio can move without
+apps seeing its episodes as new.
+
 The feed and image URLs come from "feed" and "image" in feed.json, or default
 to the feed's location in the bucket from hosting.json. One of them has to
 supply both.
@@ -87,6 +92,9 @@ func buildFeed(feedDirAbs string, f feed) error {
 			hosting.Filename, feedDirAbs)
 	}
 
+	if err := ensureGUIDs(f); err != nil {
+		return err
+	}
 	hash, err := inputsHash(feedDirAbs, f)
 	if err != nil {
 		return err

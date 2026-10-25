@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
@@ -13,7 +14,9 @@ import (
 	"github.com/Stephan5/podcastinator/internal/dateutil"
 	"github.com/Stephan5/podcastinator/internal/feedconfig"
 	"github.com/Stephan5/podcastinator/internal/feedcsv"
+	"github.com/Stephan5/podcastinator/internal/feedrss"
 	"github.com/Stephan5/podcastinator/internal/hosting"
+	"github.com/Stephan5/podcastinator/internal/urlutil"
 )
 
 const (
@@ -169,4 +172,78 @@ func latestDate(records []feedcsv.Record) time.Time {
 func printHeading(name string) {
 	sep := strings.Repeat("-", 51)
 	fmt.Printf("%s\n--- %s\n%s\n\n", sep, name, sep)
+}
+
+// ensureGUIDs gives every episode in f's CSV a GUID, writing the CSV back if
+// any were missing. An episode already in feed.xml keeps the GUID it was
+// published with, which before the guid column was its URL, so podcast apps
+// don't see it as new; any other episode gets a new UUID.
+func ensureGUIDs(f feed) error {
+	records, err := f.records()
+	if err != nil {
+		return err
+	}
+
+	var published map[string]string // encoded enclosure URL → GUID
+	missing := 0
+	for i := range records {
+		if records[i].GUID != "" {
+			continue
+		}
+		if published == nil {
+			if published, err = publishedGUIDs(f); err != nil {
+				return err
+			}
+		}
+		encoded, _ := urlutil.Encode(records[i].URL)
+		if guid, ok := published[encoded]; ok {
+			records[i].GUID = guid
+		} else {
+			records[i].GUID = newUUID()
+		}
+		missing++
+	}
+	if missing == 0 {
+		return nil
+	}
+
+	if err := feedcsv.Write(f.csvPath(), f.cfg.DelimiterRune(), records); err != nil {
+		return err
+	}
+	fmt.Printf("Gave %d episode(s) a GUID in %s.\n\n", missing, csvFilename)
+	return nil
+}
+
+// publishedGUIDs maps the episodes in f's existing feed.xml, by enclosure
+// URL, to their GUIDs.
+func publishedGUIDs(f feed) (map[string]string, error) {
+	guids := map[string]string{}
+	xmlFile, err := os.Open(f.xmlPath())
+	if os.IsNotExist(err) {
+		return guids, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer xmlFile.Close()
+
+	parsed, err := feedrss.Parse(xmlFile)
+	if err != nil {
+		return nil, fmt.Errorf("read published GUIDs from %s: %w", f.xmlPath(), err)
+	}
+	for _, rec := range parsed.Records {
+		if rec.GUID != "" {
+			guids[rec.URL] = rec.GUID
+		}
+	}
+	return guids, nil
+}
+
+// newUUID returns a random (version 4) UUID.
+func newUUID() string {
+	var b [16]byte
+	rand.Read(b[:]) //nolint:errcheck // never fails; see crypto/rand.Read
+	b[6] = b[6]&0x0f | 0x40
+	b[8] = b[8]&0x3f | 0x80
+	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
 }

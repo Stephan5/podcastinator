@@ -108,7 +108,7 @@ var rssTemplate = template.Must(template.New("rss").Funcs(template.FuncMap{
     {{- range .Items}}
     <item>
       <link>{{xmlEscapeAttr .Link}}</link>
-      <guid>{{xmlEscapeAttr .Link}}</guid>
+      <guid{{if not .PermaLink}} isPermaLink="false"{{end}}>{{xmlEscapeAttr .GUID}}</guid>
       <title>{{xmlEscape .Title}}</title>
       <description>{{.Description}}</description>
       <pubDate>{{.PubDate}}</pubDate>
@@ -140,6 +140,8 @@ type rssItem struct {
 	Description string
 	PubDate     string
 	Link        string
+	GUID        string
+	PermaLink   bool
 	Length      string
 	MimeType    string
 }
@@ -215,11 +217,22 @@ func Build(opts FeedOptions, records []feedcsv.Record, logger io.Writer) ([]byte
 		}
 		mimeType := urlutil.MimeTypeForExtension(ext)
 
+		// Episodes published before GUIDs were stored used their URL, and
+		// keep it, written exactly as it was. Those are still URLs, so they
+		// stay permalinks; anything else (a UUID) isn't one.
+		guid := rec.GUID
+		if guid == "" {
+			guid = htmlURL
+		}
+		permaLink := strings.HasPrefix(guid, "http://") || strings.HasPrefix(guid, "https://")
+
 		items = append(items, rssItem{
 			Title:       fmt.Sprintf("%d: %s", num, rec.Title),
 			Description: desc,
 			PubDate:     rec.Date,
 			Link:        htmlURL,
+			GUID:        guid,
+			PermaLink:   permaLink,
 			Length:      length,
 			MimeType:    mimeType,
 		})
@@ -405,6 +418,7 @@ func Parse(r io.Reader) (*ParsedFeed, error) {
 				Description: item.Description,
 				Date:        item.PubDate,
 				URL:         decodedURL,
+				GUID:        strings.TrimSpace(item.GUID),
 			},
 			t: t,
 		})

@@ -436,11 +436,21 @@ func TestImportFromFile(t *testing.T) {
 		t.Fatalf("expected feed.csv: %v", err)
 	}
 	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
-	if lines[0] != "title\x1fdescription\x1fdate\x1furl" {
+	if lines[0] != "title\x1fdescription\x1fdate\x1furl\x1fguid" {
 		t.Errorf("unexpected header %q", lines[0])
 	}
 	if len(lines) != 7 {
 		t.Errorf("got %d lines; want header + 6 episodes:\n%s", len(lines), data)
+	}
+	// Every episode gets its own new UUID, not the source's GUID.
+	seen := map[string]bool{}
+	for _, line := range lines[1:] {
+		fields := strings.Split(line, "\x1f")
+		guid := fields[len(fields)-1]
+		if !uuidPattern.MatchString(guid) || seen[guid] {
+			t.Errorf("expected a new, distinct UUID, got %q in %q", guid, line)
+		}
+		seen[guid] = true
 	}
 	if !strings.Contains(string(data), "1: 2002-06-29\x1f") {
 		t.Errorf("first episode missing from CSV:\n%s", data)
@@ -559,11 +569,11 @@ func TestImportBuildUpdate(t *testing.T) {
 
 	// Oldest first, with the multi-line description flattened onto its row.
 	csv, _ := os.ReadFile(filepath.Join(dir, "feed.csv"))
-	want := "title\x1fdescription\x1fdate\x1furl\n" +
-		episode("Episode One", "Mon, 01 Jan 2024 09:00:00 GMT", srv.URL+"/episode-one.mp3") + "\n" +
-		"Episode Two\x1f&lt;p&gt;Weeds and pots&lt;/p&gt;\x1fTue, 02 Jan 2024 09:00:00 GMT\x1f" + srv.URL + "/episode-two.mp3\n"
-	if string(csv) != want {
-		t.Errorf("feed.csv:\n%q\nwant:\n%q", csv, want)
+	want := "title\x1fdescription\x1fdate\x1furl\x1fguid\n" +
+		episode("Episode One", "Mon, 01 Jan 2024 09:00:00 GMT", srv.URL+"/episode-one.mp3") + "\x1fUUID\n" +
+		"Episode Two\x1f&lt;p&gt;Weeds and pots&lt;/p&gt;\x1fTue, 02 Jan 2024 09:00:00 GMT\x1f" + srv.URL + "/episode-two.mp3\x1fUUID\n"
+	if got := uuidPattern.ReplaceAllString(string(csv), "UUID"); got != want {
+		t.Errorf("feed.csv:\n%q\nwant:\n%q", got, want)
 	}
 
 	out, code = run("build", "--feed-dir", feedRoot)
@@ -585,7 +595,8 @@ func TestImportBuildUpdate(t *testing.T) {
 		t.Fatalf("update exited %d:\n%s", code, out)
 	}
 	csv, _ = os.ReadFile(filepath.Join(dir, "feed.csv"))
-	if !strings.HasSuffix(string(csv), "Episode Three\x1fNew &amp; improved\x1fWed, 03 Jan 2024 09:00:00 GMT\x1f"+srv.URL+"/episode-three.mp3\n") {
+	if got := uuidPattern.ReplaceAllString(string(csv), "UUID"); !strings.HasSuffix(got,
+		"Episode Three\x1fNew &amp; improved\x1fWed, 03 Jan 2024 09:00:00 GMT\x1f"+srv.URL+"/episode-three.mp3\x1fUUID\n") {
 		t.Errorf("expected Episode Three appended:\n%s", csv)
 	}
 
@@ -614,6 +625,77 @@ func TestUpdateRequiresSource(t *testing.T) {
 	out, code = run("update", "handmade", "--feed-dir", feedRoot)
 	if code == 0 || !strings.Contains(out, `no "source"`) {
 		t.Errorf("expected update of a named feed without a source to fail, exit %d:\n%s", code, out)
+	}
+}
+
+var uuidPattern = regexp.MustCompile(`[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}`)
+
+// guids returns the <guid> elements in a feed, as written.
+func guids(t *testing.T, path string) []string {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return regexp.MustCompile(`<guid[^>]*>[^<]*</guid>`).FindAllString(string(data), -1)
+}
+
+// TestBuildKeepsPublishedGUIDs checks a feed from before the guid column keeps
+// the GUIDs it was published with (its episode URLs), written exactly as
+// before, while new episodes get UUIDs.
+func TestBuildKeepsPublishedGUIDs(t *testing.T) {
+	audio := audioServer(t)
+	feedRoot := t.TempDir()
+	writeHosting(t, feedRoot)
+	dir := writeFeed(t, feedRoot, "old-show", `{"title":"Old Show"}`,
+		episode("Ep1", "Sat, 29 Jun 2002 03:00:00 GMT", audio+"/ep1.mp3"),
+		episode("Ep2", "Sat, 06 Jul 2002 03:00:00 GMT", audio+"/ep2.mp3?a=1&b=2"),
+		episode("Ep3", "Sat, 13 Jul 2002 03:00:00 GMT", audio+"/ep3.mp3"))
+
+	// As 0.3.0 published Ep1 and Ep2, with their URLs as GUIDs (and & escaped twice).
+	published := []string{
+		`<guid>` + audio + `/ep1.mp3</guid>`,
+		`<guid>` + audio + `/ep2.mp3?a=1&amp;amp;b=2</guid>`,
+	}
+	os.WriteFile(filepath.Join(dir, "feed.xml"), []byte(`<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0"><channel><title>Old Show</title>
+<item><title>1: Ep1</title><pubDate>Sat, 29 Jun 2002 03:00:00 GMT</pubDate>`+published[0]+
+		`<enclosure url="`+audio+`/ep1.mp3" length="1" type="audio/mpeg"/></item>
+<item><title>2: Ep2</title><pubDate>Sat, 06 Jul 2002 03:00:00 GMT</pubDate>`+published[1]+
+		`<enclosure url="`+audio+`/ep2.mp3?a=1&amp;amp;b=2" length="1" type="audio/mpeg"/></item>
+</channel></rss>
+`), 0644)
+
+	out, code := run("build", "--feed-dir", feedRoot)
+	if code != 0 {
+		t.Fatalf("build exited %d:\n%s", code, out)
+	}
+	if !strings.Contains(out, "Gave 3 episode(s) a GUID") {
+		t.Errorf("expected build to report the GUIDs it assigned:\n%s", out)
+	}
+
+	got := guids(t, filepath.Join(dir, "feed.xml"))
+	if len(got) != 3 || got[0] != published[0] || got[1] != published[1] {
+		t.Fatalf("published GUIDs changed:\n%s\nwant to start:\n%s", strings.Join(got, "\n"), strings.Join(published, "\n"))
+	}
+	if !regexp.MustCompile(`^<guid isPermaLink="false">` + uuidPattern.String() + `</guid>$`).MatchString(got[2]) {
+		t.Errorf("new episode's GUID = %s; want a UUID that isn't a permalink", got[2])
+	}
+
+	// The GUIDs are now in the CSV, so moving an episode doesn't change its GUID.
+	csvPath := filepath.Join(dir, "feed.csv")
+	csv, _ := os.ReadFile(csvPath)
+	os.WriteFile(csvPath, []byte(strings.ReplaceAll(string(csv), "/ep1.mp3\x1f", "/moved/ep1.mp3\x1f")), 0644)
+	if out, code := run("build", "--feed-dir", feedRoot); code != 0 {
+		t.Fatalf("build exited %d:\n%s", code, out)
+	}
+	moved := guids(t, filepath.Join(dir, "feed.xml"))
+	if strings.Join(moved, "\n") != strings.Join(got, "\n") {
+		t.Errorf("GUIDs changed when an episode moved:\n%s\nwant:\n%s", strings.Join(moved, "\n"), strings.Join(got, "\n"))
+	}
+	xml, _ := os.ReadFile(filepath.Join(dir, "feed.xml"))
+	if !strings.Contains(string(xml), `<enclosure url="`+audio+`/moved/ep1.mp3"`) {
+		t.Errorf("expected the moved episode's new URL in its enclosure:\n%s", xml)
 	}
 }
 
