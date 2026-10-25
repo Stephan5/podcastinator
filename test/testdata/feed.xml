@@ -1,17 +1,17 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <rss xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/" xmlns:wfw="http://wellformedweb.org/CommentAPI/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd" xmlns:googleplay="http://www.google.com/schemas/play-podcasts/1.0" xmlns:spotify="http://www.spotify.com/ns/rss" xmlns:podcast="https://podcastindex.org/namespace/1.0" xmlns:media="http://search.yahoo.com/mrss/" version="2.0">
   <channel>
-    <atom:link href="https://raw.githubusercontent.com/Stephan5/podcastinator/refs/heads/main/feed/test/test.xml" rel="self" type="application/rss+xml"/>
+    <atom:link href="https://raw.githubusercontent.com/Stephan5/podcastinator/refs/heads/master/feed/test/test.xml" rel="self" type="application/rss+xml"/>
     <title>Dudes Rock</title>
     <description>&lt;p&gt;Hell yeah dude! &lt;/p&gt;&lt;br/&gt;&lt;p&gt;Generated using Stephan5/podcastinator.&lt;/p&gt;</description>
     <itunes:author>Real-ass dudes</itunes:author>
     <language>en-gb</language>
     <copyright>none</copyright>
-    <link>https://github.com/Stephan5/podcastinator/tree/main/feed/test</link>
+    <link>https://github.com/Stephan5/podcastinator/tree/master/feed/test</link>
     <image>
       <url>https://link.com/image.jpg</url>
       <title>Dudes Rock</title>
-      <link>https://github.com/Stephan5/podcastinator/tree/main/feed/test</link>
+      <link>https://github.com/Stephan5/podcastinator/tree/master/feed/test</link>
     </image>
     <generator>Stephan5/podcastinator</generator>
     <lastBuildDate>Wed, 15 Jul 2026 00:28:50 +0100</lastBuildDate>

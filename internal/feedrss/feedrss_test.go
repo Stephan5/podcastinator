@@ -357,7 +357,7 @@ const testRSSXML = `<?xml version="1.0" encoding="UTF-8"?>
   <channel>
     <title>Dudes Rock</title>
     <description>Hell yeah dude!</description>
-    <link>https://github.com/Stephan5/podcastinator/tree/main/feed/test</link>
+    <link>https://github.com/Stephan5/podcastinator/tree/master/feed/test</link>
     <image><url>https://link.com/image.jpg</url></image>
     <item>
       <title>2002-06-29</title>
@@ -406,7 +406,7 @@ func TestParseFeedMetadata(t *testing.T) {
 	if feed.Title != "Dudes Rock" {
 		t.Errorf("Title = %q; want %q", feed.Title, "Dudes Rock")
 	}
-	if feed.Link != "https://github.com/Stephan5/podcastinator/tree/main/feed/test" {
+	if feed.Link != "https://github.com/Stephan5/podcastinator/tree/master/feed/test" {
 		t.Errorf("Link = %q", feed.Link)
 	}
 	if feed.ImageURL != "https://link.com/image.jpg" {
