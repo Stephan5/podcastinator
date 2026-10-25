@@ -144,7 +144,7 @@ jobs:
         with:
           role-to-assume: ${{ vars.PUBLISH_ROLE_ARN }}
           aws-region: eu-west-2
-      - run: go install github.com/Stephan5/podcastinator/cmd/podcastinator@v0.4.0
+      - run: go install github.com/Stephan5/podcastinator/cmd/podcastinator@latest
       - run: podcastinator publish
 ```
 
