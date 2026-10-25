@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"text/tabwriter"
+	"time"
 
-	"github.com/Stephan5/podcastinator/internal/feedindex"
 	"github.com/Stephan5/podcastinator/internal/feedrss"
 	"github.com/Stephan5/podcastinator/internal/hosting"
 	"github.com/Stephan5/podcastinator/internal/s3util"
@@ -80,7 +80,7 @@ func runStatus(ctx context.Context, feedDirAbs string, feeds []feed, remote bool
 
 		latest := "-"
 		if t := latestDate(records); !t.IsZero() {
-			latest = feedindex.FormatDate(t)
+			latest = t.UTC().Format(time.RFC3339)
 		}
 
 		built, err := buildState(feedDirAbs, f)

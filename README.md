@@ -90,14 +90,12 @@ Hosting is configured once, in `feed/hosting.json`:
 }
 ```
 
-`public_url` is the address that serves the bucket root, and defaults to `https://s3.<region>.amazonaws.com/<bucket>`. It applies to everything in the bucket: feeds, cover art, the index files and the episode audio that `audio upload` puts there. Episodes uploaded by versions before 0.8.0 have their S3 URL; podcastinator recognises either, and `audio upload` switches them to the public URL. The optional `prefix` puts everything under an S3 key prefix (default none). `podcastinator init --bucket <bucket>` writes the file for you.
+`public_url` is the address that serves the bucket root, and defaults to `https://s3.<region>.amazonaws.com/<bucket>`. It applies to everything in the bucket: feeds, cover art and the episode audio that `audio upload` puts there. Episodes uploaded by versions before 0.8.0 have their S3 URL; podcastinator recognises either, and `audio upload` switches them to the public URL. The optional `prefix` puts everything under an S3 key prefix (default none). `podcastinator init --bucket <bucket>` writes the file for you.
 
 The bucket ends up laid out as:
 
 ```
 <prefix>/
-  index.json               ← every feed's title, URLs and episode count
-  podcasts.opml            ← every feed, to import into a podcast app in one go
   <feed>/
     feed.xml
     image.jpg
@@ -118,7 +116,7 @@ To serve everything from your own domain, map it straight onto the bucket root s
    - Origin access: a new **origin access control** (OAC), signing requests, so CloudFront can read the private bucket ([AWS docs](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/private-content-restricting-access-to-s3.html)).
    - Alternate domain name: your domain, with the certificate from step 1.
    - Viewer protocol policy: redirect HTTP to HTTPS.
-   - Cache policy `CachingOptimized`. It honours each object's `Cache-Control`, which `publish` sets to 5 minutes for feeds and the index and a day for cover art, so they need no invalidations. Episode audio has no `Cache-Control`, so CloudFront keeps it for its default of a day; if you replace an episode's file or change its metadata, invalidate its path.
+   - Cache policy `CachingOptimized`. It honours each object's `Cache-Control`, which `publish` sets to 5 minutes for feeds and a day for cover art, so they need no invalidations. Episode audio has no `Cache-Control`, so CloudFront keeps it for its default of a day; if you replace an episode's file or change its metadata, invalidate its path.
    - No default root object and no custom error responses, so a missing feed is a 404 rather than an HTML page podcast apps choke on.
 3. Give the bucket a policy that only lets the distribution read it:
 
@@ -142,9 +140,9 @@ To serve everything from your own domain, map it straight onto the bucket root s
    `s3:ListBucket` is what makes a missing file a 404 rather than a 403. Then turn on all four Block Public Access settings for the bucket.
 4. Point a DNS record for the domain at the distribution.
 
-Then set `public_url` to `https://<domain>`. `publish` checks that `<public_url>/index.json` is reachable after uploading, so a broken domain shows up there rather than in podcast apps.
+Then set `public_url` to `https://<domain>`. `publish` checks that a feed it uploaded is reachable at `<public_url>/<feed>/feed.xml`, so a broken domain shows up there rather than in podcast apps.
 
-To move an existing public bucket behind CloudFront: add the OAC to the origin and wait for it to deploy, replace the public bucket policy with the one above, check `https://<domain>/index.json` still loads and the S3 URL now gives a 403, then turn on Block Public Access, which rejects a public policy so has to come last. Anything still using the bucket's S3 URLs stops working, including feeds built by podcastinator before 0.8.0, whose audio has S3 URLs: switch their URLs first (`audio upload` does it per feed).
+To move an existing public bucket behind CloudFront: add the OAC to the origin and wait for it to deploy, replace the public bucket policy with the one above, check `https://<domain>/<feed>/feed.xml` still loads and the S3 URL now gives a 403, then turn on Block Public Access, which rejects a public policy so has to come last. Anything still using the bucket's S3 URLs stops working, including feeds built by podcastinator before 0.8.0, whose audio has S3 URLs: switch their URLs first (`audio upload` does it per feed).
 
 ### Moving a feed
 
@@ -208,7 +206,7 @@ aws cloudtrail lookup-events --region <region> \
   | jq '{time: .eventTime, error: .errorCode, sub: .userIdentity.userName}'
 ```
 
-Give the role an inline policy that can only touch the feed files and the index, so a bad push can't touch the audio:
+Give the role an inline policy that can only touch the feed files, so a bad push can't touch the audio:
 
 ```json
 {
@@ -224,9 +222,7 @@ Give the role an inline policy that can only touch the feed files and the index,
       "Action": ["s3:GetObject", "s3:PutObject"],
       "Resource": [
         "arn:aws:s3:::<bucket>/*/feed.xml",
-        "arn:aws:s3:::<bucket>/*/image.jpg",
-        "arn:aws:s3:::<bucket>/index.json",
-        "arn:aws:s3:::<bucket>/podcasts.opml"
+        "arn:aws:s3:::<bucket>/*/image.jpg"
       ]
     }
   ]
@@ -247,7 +243,7 @@ Give the role an inline policy that can only touch the feed files and the index,
 | Self-host | `audio upload <feed>`                        | Copies a feed's episodes into the bucket and points its CSV at them   |
 |           | `audio prune <feed> [--delete]`              | Finds audio in the bucket the CSV no longer points at                 |
 |           | `audio download <feed> <dir>`                | Downloads a feed's episodes for safekeeping                           |
-|           | `publish [feed...] [--dry-run]`              | Uploads feeds, cover art and the index to the bucket                  |
+|           | `publish [feed...] [--dry-run]`              | Uploads feeds and cover art to the bucket                             |
 |           | `status [feed...] [--remote]`                | Shows where each feed is between import and publish                   |
 
 `podcastinator <command> --help` has the details.
@@ -322,7 +318,7 @@ podcastinator publish example-show     # just this one
 podcastinator publish --dry-run        # report what would change
 ```
 
-Uploads each feed's `feed.xml` and `image.jpg` to `<prefix>/<slug>/`, then writes `index.json` and `podcasts.opml` to the bucket root, always covering every feed. Files that already match the bucket by ETag are skipped. Refuses to upload anything if a feed's `feed.xml` is out of date with its `feed.csv`, `feed.json` or `hosting.json`. Never touches episode audio.
+Uploads each feed's `feed.xml` and `image.jpg` to `<prefix>/<slug>/`. Files that already match the bucket by ETag are skipped. Refuses to upload anything if a feed's `feed.xml` is out of date with its `feed.csv`, `feed.json` or `hosting.json`. Never touches episode audio.
 
 ### `status` — what state is everything in
 

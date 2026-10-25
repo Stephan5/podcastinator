@@ -1106,9 +1106,9 @@ func TestPublishUploadsFeedsAndSkipsUnchanged(t *testing.T) {
 		t.Fatalf("publish exited %d:\n%s", code, out)
 	}
 	if !strings.Contains(out, "Published.") {
-		t.Errorf("expected publish to confirm the public URL serves the index:\n%s", out)
+		t.Errorf("expected publish to confirm the public URL serves the feed:\n%s", out)
 	}
-	for _, key := range []string{"hosted-show/feed.xml", "hosted-show/image.jpg", "index.json", "podcasts.opml"} {
+	for _, key := range []string{"hosted-show/feed.xml", "hosted-show/image.jpg"} {
 		want := fmt.Sprintf("uploaded → s3://%s/%s/%s", bucket, prefix, key)
 		if !strings.Contains(out, want) {
 			t.Errorf("expected %q in output:\n%s", want, out)
@@ -1119,8 +1119,8 @@ func TestPublishUploadsFeedsAndSkipsUnchanged(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("second publish exited %d:\n%s", code, out)
 	}
-	if strings.Contains(out, "uploaded") || strings.Count(out, "unchanged") != 4 {
-		t.Errorf("second publish should skip all 4 unchanged files:\n%s", out)
+	if strings.Contains(out, "uploaded") || strings.Count(out, "unchanged") != 2 {
+		t.Errorf("second publish should skip both unchanged files:\n%s", out)
 	}
 
 	// The published feed files must not count as orphaned episodes.

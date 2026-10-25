@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/Stephan5/podcastinator/internal/feedindex"
 	"github.com/Stephan5/podcastinator/internal/feedrss"
 	"github.com/Stephan5/podcastinator/internal/hosting"
 	"github.com/Stephan5/podcastinator/internal/s3util"
@@ -23,10 +22,8 @@ const (
 )
 
 var publishedContentTypes = map[string]string{
-	"feed.xml":             "application/rss+xml; charset=utf-8",
-	"image.jpg":            "image/jpeg",
-	feedindex.JSONFilename: "application/json; charset=utf-8",
-	feedindex.OPMLFilename: "text/x-opml; charset=utf-8",
+	"feed.xml":  "application/rss+xml; charset=utf-8",
+	"image.jpg": "image/jpeg",
 }
 
 func newPublishCmd() *cobra.Command {
@@ -35,18 +32,14 @@ func newPublishCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "publish [feed...]",
 		GroupID: "host",
-		Short:   "Upload feeds, cover art and the feed index to the bucket",
+		Short:   "Upload feeds and cover art to the bucket",
 		Long: `Uploads each feed's feed.xml and image.jpg to <prefix>/<feed>/ in the bucket
 in hosting.json, alongside the self-hosted episodes.
 
-Also writes index.json (every feed's title, URLs and episode count) and
-podcasts.opml (to subscribe to every feed at once) to <prefix>/. These
-always list every feed, even when publishing only some.
-
 Refuses to upload anything if a feed's feed.csv, feed.json or hosting.json has
-changed since its feed.xml was built; run build first. Finally checks that
-index.json is reachable at its public URL, so a broken domain is caught before
-any feed points subscribers at it.
+changed since its feed.xml was built; run build first. Finally checks that a
+published feed.xml is reachable at its public URL, so a broken domain shows up
+here rather than in podcast apps.
 
 Files whose contents already match the bucket (by ETag) are skipped, so it is
 safe to run repeatedly. Doesn't touch episode audio; see "audio upload".
@@ -72,21 +65,15 @@ Examples:
 	return cmd
 }
 
-// localFeed is a feed directory that has been generated and can be published.
-type localFeed struct {
-	feed
-	entry feedindex.Feed
-}
-
 func runPublish(ctx context.Context, feedDirAbs string, host *hosting.Config, slugs []string, dryRun bool) error {
-	feeds, err := loadLocalFeeds(feedDirAbs, host)
+	feeds, err := loadLocalFeeds(feedDirAbs)
 	if err != nil {
 		return err
 	}
 
 	targets := feeds
 	if len(slugs) > 0 {
-		bySlug := map[string]localFeed{}
+		bySlug := map[string]feed{}
 		for _, f := range feeds {
 			bySlug[f.slug] = f
 		}
@@ -139,92 +126,45 @@ func runPublish(ctx context.Context, feedDirAbs string, host *hosting.Config, sl
 		fmt.Println()
 	}
 
-	entries := make([]feedindex.Feed, len(feeds))
-	for i, f := range feeds {
-		entries[i] = f.entry
-	}
-	indexJSON, err := feedindex.JSON(entries)
-	if err != nil {
-		return fmt.Errorf("build %s: %w", feedindex.JSONFilename, err)
-	}
-	opml, err := feedindex.OPML("Podcasts", entries)
-	if err != nil {
-		return fmt.Errorf("build %s: %w", feedindex.OPMLFilename, err)
-	}
-
-	fmt.Println("index:")
-	if err := pub.put(ctx, feedindex.JSONFilename, host.Key(feedindex.JSONFilename), indexJSON, feedCacheControl); err != nil {
-		return err
-	}
-	if err := pub.put(ctx, feedindex.OPMLFilename, host.Key(feedindex.OPMLFilename), opml, feedCacheControl); err != nil {
-		return err
-	}
-
-	if dryRun {
+	if dryRun || len(targets) == 0 {
 		return nil
 	}
 
 	// The bucket accepted the uploads; make sure the public URL serves them.
-	indexURL := host.URL(feedindex.JSONFilename)
-	if err := s3util.ValidateURL(indexURL); err != nil {
+	feedURL := host.URL(targets[0].slug + "/" + xmlFilename)
+	if err := s3util.ValidateURL(feedURL); err != nil {
 		return fmt.Errorf("uploaded, but %s isn't reachable (%v); fix hosting before rebuilding feeds for it, "+
-			"or feeds will point subscribers at it", indexURL, err)
+			"or feeds will point subscribers at it", feedURL, err)
 	}
 
-	fmt.Printf("\nPublished. Subscribe to everything at once with %s\n", host.URL(feedindex.OPMLFilename))
+	fmt.Println("Published.")
 	return nil
 }
 
-// loadLocalFeeds returns every feed with a generated feed.xml, sorted by
-// slug, along with its index entry.
-func loadLocalFeeds(feedDirAbs string, host *hosting.Config) ([]localFeed, error) {
+// loadLocalFeeds returns every feed with a generated feed.xml, sorted by slug.
+func loadLocalFeeds(feedDirAbs string) ([]feed, error) {
 	all, err := allFeeds(feedDirAbs)
 	if err != nil {
 		return nil, err
 	}
 
-	var feeds []localFeed
+	var feeds []feed
 	for _, f := range all {
 		if _, err := os.Stat(f.xmlPath()); os.IsNotExist(err) {
 			fmt.Printf("Skipping %q — no feed.xml; run podcastinator build %s first.\n", f.slug, f.slug)
 			continue
 		}
-
-		entry := feedindex.Feed{
-			Slug:        f.slug,
-			Title:       f.cfg.Title,
-			Description: f.cfg.Description,
-			Author:      f.cfg.Author,
-			FeedURL:     f.cfg.FeedURL,
-			ImageURL:    f.cfg.ImageURL,
-		}
-		if entry.FeedURL == "" {
-			entry.FeedURL = host.URL(f.slug + "/" + xmlFilename)
-		}
-		if entry.ImageURL == "" {
-			entry.ImageURL = host.URL(f.slug + "/image.jpg")
-		}
-
-		records, err := f.records()
-		if err != nil && !os.IsNotExist(err) {
-			return nil, fmt.Errorf("feed %q: read CSV: %w", f.slug, err)
-		}
-		entry.EpisodeCount = len(records)
-		if latest := latestDate(records); !latest.IsZero() {
-			entry.LatestEpisode = feedindex.FormatDate(latest)
-		}
-
-		feeds = append(feeds, localFeed{feed: f, entry: entry})
+		feeds = append(feeds, f)
 	}
 	return feeds, nil
 }
 
 // checkBuilt fails unless every feed's feed.xml was built from its current
 // inputs, so a CSV edited without a rebuild can't be published stale.
-func checkBuilt(feedDirAbs string, feeds []localFeed) error {
+func checkBuilt(feedDirAbs string, feeds []feed) error {
 	var stale []string
 	for _, f := range feeds {
-		want, err := inputsHash(feedDirAbs, f.feed)
+		want, err := inputsHash(feedDirAbs, f)
 		if err != nil {
 			return fmt.Errorf("feed %q: %w", f.slug, err)
 		}
