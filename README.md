@@ -348,7 +348,7 @@ The `publish` and `audio prune` integration tests need an S3 endpoint (`AWS_ENDP
 Changes note themselves at the top of [`RELEASE_NOTES.md`](RELEASE_NOTES.md), under `## Unreleased`, as they're merged. Older versions' sections stay below as the history. To release, cut the version on `master`, push it, then tag it and push the tag:
 
 ```shell
-make cut V=0.10.0   # sets version.go, the README's go install lines and the notes' heading, and commits "cut v0.10.0"
+make cut V=0.10.0   # sets version.go, the README's go install lines and the notes' heading, commits "cut v0.10.0" and shows it
 git push
 make release        # git tag v<version> && git push origin v<version>
 ```
