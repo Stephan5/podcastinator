@@ -922,6 +922,63 @@ func TestAudioUploadDstURLHasSlashBetweenBucketAndKey(t *testing.T) {
 	}
 }
 
+// TestAudioUploadPointsAtPublicURL checks an episode uploaded when audio was
+// served from its S3 URL is switched to its public URL without being moved
+// or uploaded again.
+func TestAudioUploadPointsAtPublicURL(t *testing.T) {
+	var heads []string
+	cdn := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		heads = append(heads, r.Method+" "+r.URL.Path)
+	}))
+	defer cdn.Close()
+
+	feedRoot := t.TempDir()
+	os.WriteFile(filepath.Join(feedRoot, "hosting.json"), []byte(
+		`{"bucket":"my-bucket","region":"eu-west-2","public_url":"`+cdn.URL+`"}`), 0644)
+	writeFeed(t, feedRoot, "my-show", `{"title":"My Show"}`,
+		episode("Episode 1", "Sat, 29 Jun 2002 03:00:00 GMT",
+			"https://s3.eu-west-2.amazonaws.com/my-bucket/my-show/1-episode-1.mp3"))
+
+	out, code := run("audio", "upload", "my-show", "--feed-dir", feedRoot)
+	if code != 0 {
+		t.Fatalf("audio upload exited %d:\n%s", code, out)
+	}
+	if !strings.Contains(out, "Already in bucket. Pointing at its public URL.") {
+		t.Errorf("expected the episode to be pointed at its public URL:\n%s", out)
+	}
+	csv, _ := os.ReadFile(filepath.Join(feedRoot, "my-show", "feed.csv"))
+	if !strings.Contains(string(csv), "\x1f"+cdn.URL+"/my-show/1-episode-1.mp3\x1f") {
+		t.Errorf("expected the CSV to use the public URL:\n%s", csv)
+	}
+	// It checked the public URL serves the episode, and touched nothing else.
+	if strings.Join(heads, ",") != "HEAD /my-show/1-episode-1.mp3" {
+		t.Errorf("requests to the public URL: %v", heads)
+	}
+
+	// Running it again finds it at its destination.
+	out, code = run("audio", "upload", "my-show", "--feed-dir", feedRoot)
+	if code != 0 || !strings.Contains(out, "Already at destination. Skipping.") {
+		t.Errorf("expected a second upload to skip the episode, exit %d:\n%s", code, out)
+	}
+}
+
+// TestStatusCountsHostedAudioByEitherURL checks episodes in the bucket count
+// as hosted by their public URL or their S3 URL.
+func TestStatusCountsHostedAudioByEitherURL(t *testing.T) {
+	feedRoot := t.TempDir()
+	writeHosting(t, feedRoot)
+	writeFeed(t, feedRoot, "my-show", `{"title":"My Show"}`,
+		episode("Ep1", "Sat, 29 Jun 2002 03:00:00 GMT", "https://podcasts.example.com/my-show/1-ep1.mp3"),
+		episode("Ep2", "Sat, 06 Jul 2002 03:00:00 GMT", "https://s3.eu-west-2.amazonaws.com/my-bucket/my-show/2-ep2.mp3"),
+		episode("Ep3", "Sat, 13 Jul 2002 03:00:00 GMT", "https://elsewhere.example.com/ep3.mp3"),
+		episode("Ep4", "Sat, 20 Jul 2002 03:00:00 GMT", "https://podcasts.example.com/other-show/4-ep4.mp3"))
+
+	out, _ := run("status", "--feed-dir", feedRoot)
+	if !regexp.MustCompile(`my-show\s+4\s+\S+\s+\S+\s+2/4 hosted`).MatchString(out) {
+		t.Errorf("expected 2 of 4 episodes hosted:\n%s", out)
+	}
+}
+
 func TestAudioUploadWithoutHostingFails(t *testing.T) {
 	feedRoot := t.TempDir()
 	writeFeed(t, feedRoot, "my-show", `{"title":"My Show"}`)
@@ -1149,6 +1206,45 @@ func TestPublishRefusesStaleFeed(t *testing.T) {
 	out, code := run("publish", "--feed-dir", feedRoot)
 	if code == 0 || !strings.Contains(out, "out of date for hosted-show") {
 		t.Errorf("expected a hosting.json change to make the feed stale, exit %d:\n%s", code, out)
+	}
+}
+
+// TestAudioPruneRecognisesPublicURLs checks audio referenced by its public
+// URL or its S3 URL isn't an orphan, so prune --delete can't delete it.
+func TestAudioPruneRecognisesPublicURLs(t *testing.T) {
+	bucket := s3TestBucket(t)
+	prefix := fmt.Sprintf("it-prune-%d", os.Getpid())
+	cdn := fakeCDN(t, bucket)
+
+	cfg, err := config.LoadDefaultConfig(context.Background(), config.WithRegion("eu-west-2"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := s3.NewFromConfig(cfg, func(o *s3.Options) { o.UsePathStyle = true })
+	for _, name := range []string{"1-ep1.mp3", "2-ep2.mp3", "stray.mp3"} {
+		if _, err := client.PutObject(context.Background(), &s3.PutObjectInput{
+			Bucket: aws.String(bucket),
+			Key:    aws.String(prefix + "/show/" + name),
+			Body:   strings.NewReader("audio"),
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	feedRoot := t.TempDir()
+	os.WriteFile(filepath.Join(feedRoot, "hosting.json"), []byte(fmt.Sprintf(
+		`{"bucket":%q,"region":"eu-west-2","prefix":%q,"public_url":%q}`, bucket, prefix, cdn.URL)), 0644)
+	writeFeed(t, feedRoot, "show", `{"title":"Show"}`,
+		episode("Ep1", "Sat, 29 Jun 2002 03:00:00 GMT", cdn.URL+"/"+prefix+"/show/1-ep1.mp3"),
+		episode("Ep2", "Sat, 06 Jul 2002 03:00:00 GMT",
+			fmt.Sprintf("https://s3.eu-west-2.amazonaws.com/%s/%s/show/2-ep2.mp3", bucket, prefix)))
+
+	out, code := run("audio", "prune", "show", "--feed-dir", feedRoot, "--fail-on-orphans")
+	if code != 2 {
+		t.Fatalf("expected exit 2 for the stray file, got %d:\n%s", code, out)
+	}
+	if !strings.Contains(out, "Found 1 orphaned") || !strings.Contains(out, "/show/stray.mp3") {
+		t.Errorf("expected only stray.mp3 to be an orphan:\n%s", out)
 	}
 }
 

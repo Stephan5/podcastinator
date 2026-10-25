@@ -2,6 +2,16 @@
 
 Newest first. A release's description on GitHub is its section here.
 
+## Unreleased
+
+### Changed
+
+* **Episode audio is served from `public_url`**, like feeds and cover art, rather than its S3 URL, so a CloudFront distribution in front of the bucket serves it too. `audio upload` gives new episodes their public URL, and points episodes already in the bucket by their S3 URL at their public one without moving them. Since GUIDs are stored, changing an episode's URL doesn't make it new to subscribers. Without `public_url`, nothing changes.
+
+### Fixed
+
+* `audio prune`, `audio upload` and `status` recognise audio in the bucket by its public URL as well as its S3 URL. Before, an episode whose CSV row had its public URL counted as not hosted, `audio upload` downloaded and re-uploaded it, and **`audio prune` reported it as an orphan, so `--delete` would have deleted it**.
+
 ## 0.7.0
 
 ### Added

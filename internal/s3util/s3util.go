@@ -174,15 +174,3 @@ func ValidateURL(rawURL string) error {
 	}
 	return nil
 }
-
-// HTTPToS3URL converts an HTTPS S3 URL to an s3:// URI.
-func HTTPToS3URL(httpURL, bucket string) (resultBucket, key string, err error) {
-	// https://s3.REGION.amazonaws.com/BUCKET/KEY
-	const awsHost = "amazonaws.com/"
-	_, rest, ok := strings.Cut(httpURL, awsHost)
-	if !ok {
-		return "", "", fmt.Errorf("not an S3 URL: %s", httpURL)
-	}
-	resultBucket, key, _ = strings.Cut(rest, "/")
-	return resultBucket, key, nil
-}

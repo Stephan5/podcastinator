@@ -36,9 +36,11 @@ func newAudioUploadCmd() *cobra.Command {
 		Use:   "upload <feed>",
 		Short: "Copy a feed's episodes into the bucket and point its CSV at them",
 		Long: `Uploads each episode in <feed>/feed.csv to <prefix>/<feed>/ in the bucket,
-named NNN-slugified-title.ext, and rewrites the CSV with the new URLs.
+named NNN-slugified-title.ext, and rewrites the CSV with the new URLs, which
+are under public_url from hosting.json.
 
   - already at its destination: skipped
+  - at its destination, but by its S3 URL: pointed at its public URL
   - elsewhere in the bucket: moved
   - a remote http(s) URL: downloaded and uploaded
   - a local file:// URL (relative to the feed directory): uploaded
@@ -67,7 +69,7 @@ Run build afterwards.`,
 func runAudioUpload(ctx context.Context, f feed, host *hosting.Config) error {
 	bucket, region := host.Bucket, host.Region
 	keyRoot := host.KeyRoot(f.slug)
-	baseHTTPDst := host.S3URL() + "/" + keyRoot
+	baseHTTPDst := host.BaseURL() + "/" + keyRoot
 
 	// Fix each episode's GUID before its URL changes.
 	if err := ensureGUIDs(f); err != nil {
@@ -124,23 +126,27 @@ func runAudioUpload(ctx context.Context, f feed, host *hosting.Config) error {
 		encodedSrc, _ := urlutil.Encode(srcURL)
 
 		var newURL string
+		srcKey, inBucket := host.KeyForURL(srcURL)
 
 		switch {
 		case encodedSrc == httpDstURL:
 			fmt.Println("  → Already at destination. Skipping.")
 			newURL = encodedSrc
 
-		case strings.HasPrefix(encodedSrc, host.S3URL()):
+		case inBucket && srcKey == dstKey:
+			// Uploaded when audio was served from its S3 URL.
+			fmt.Println("  → Already in bucket. Pointing at its public URL.")
+			if err := s3util.ValidateURL(httpDstURL); err != nil {
+				return fmt.Errorf("validate public URL %s: %w", httpDstURL, err)
+			}
+			newURL = httpDstURL
+
+		case inBucket:
 			fmt.Printf("  → Already in bucket, moving to new location\n")
 			if err := s3util.ValidateURL(encodedSrc); err != nil {
 				return fmt.Errorf("validate src URL %s: %w", encodedSrc, err)
 			}
-			decodedSrc := urlutil.Decode(srcURL)
-			srcBucket, srcKey, err := s3util.HTTPToS3URL(decodedSrc, bucket)
-			if err != nil {
-				return fmt.Errorf("parse src S3 URL: %w", err)
-			}
-			if err := s3Client.Move(ctx, srcBucket, srcKey, bucket, dstKey); err != nil {
+			if err := s3Client.Move(ctx, bucket, srcKey, bucket, dstKey); err != nil {
 				fmt.Printf("  Warning: move failed: %v. Keeping original URL.\n", err)
 				newURL = encodedSrc
 			} else {
@@ -272,11 +278,8 @@ func runAudioPrune(ctx context.Context, f feed, host *hosting.Config, del, failO
 		if rec.URL == "" {
 			continue
 		}
-		clean := urlutil.StripQuery(urlutil.Decode(rec.URL))
-		if b, key, err := s3util.HTTPToS3URL(clean, bucket); err == nil && b == bucket {
-			if strings.HasPrefix(key, keyRoot) {
-				referenced[key] = true
-			}
+		if key, ok := host.KeyForURL(rec.URL); ok && strings.HasPrefix(key, keyRoot) {
+			referenced[key] = true
 		}
 	}
 	fmt.Printf("Referenced keys in CSV: %d\n", len(referenced)-len(hosting.PublishedFiles))

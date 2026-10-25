@@ -90,10 +90,10 @@ func runStatus(ctx context.Context, feedDirAbs string, feeds []feed, remote bool
 
 		audio := "-"
 		if host != nil {
-			hostedPrefix := host.S3URL() + "/" + host.KeyRoot(f.slug)
+			keyRoot := host.KeyRoot(f.slug)
 			hosted := 0
 			for _, rec := range records {
-				if strings.HasPrefix(rec.URL, hostedPrefix) {
+				if key, ok := host.KeyForURL(rec.URL); ok && strings.HasPrefix(key, keyRoot) {
 					hosted++
 				}
 			}

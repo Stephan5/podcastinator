@@ -90,7 +90,7 @@ Hosting is configured once, in `feed/hosting.json`:
 }
 ```
 
-`public_url` is the address that serves the bucket root, and defaults to `https://s3.<region>.amazonaws.com/<bucket>`. It applies to feeds, cover art and the index files. Episode audio uploaded by `audio upload` is served from its S3 URL. The optional `prefix` puts everything under an S3 key prefix (default none). `podcastinator init --bucket <bucket>` writes the file for you.
+`public_url` is the address that serves the bucket root, and defaults to `https://s3.<region>.amazonaws.com/<bucket>`. It applies to everything in the bucket: feeds, cover art, the index files and the episode audio that `audio upload` puts there. Episodes uploaded by versions before 0.8.0 have their S3 URL; podcastinator recognises either, and `audio upload` switches them to the public URL. The optional `prefix` puts everything under an S3 key prefix (default none). `podcastinator init --bucket <bucket>` writes the file for you.
 
 The bucket ends up laid out as:
 
@@ -269,7 +269,7 @@ Parses the CSV's date column with a strftime format and rewrites it as RFC 2822.
 podcastinator audio upload example-show
 ```
 
-Downloads each episode that isn't already in the bucket, uploads it to `<prefix>/<slug>/` with a numbered, slugified name (`001-episode-title.mp3`) and an audio `Content-Type`, and rewrites the CSV with the new URLs. Local `file://` URLs, relative to the feed directory, are uploaded directly. Episodes keep their GUIDs, so subscribers don't see moved episodes as new.
+Downloads each episode that isn't already in the bucket, uploads it to `<prefix>/<slug>/` with a numbered, slugified name (`001-episode-title.mp3`) and an audio `Content-Type`, and rewrites the CSV with the new URLs. Local `file://` URLs, relative to the feed directory, are uploaded directly, and an episode already in the bucket by its S3 URL is pointed at its `public_url` one. Episodes keep their GUIDs, so subscribers don't see moved episodes as new.
 
 ### `audio prune` — find unreferenced audio
 
