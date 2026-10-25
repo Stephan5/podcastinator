@@ -105,11 +105,23 @@ func TestBuildChannelMetadata(t *testing.T) {
 	assertContains(t, src, opts.WebsiteURL)
 	assertContains(t, src, "<language>en-gb</language>")
 	assertContains(t, src, "<copyright>none</copyright>")
-	assertContains(t, src, "Stephan5/podcastinator")
+	assertContains(t, src, "<generator>Stephan5/podcastinator</generator>")
 
-	// Channel description wraps the user description in HTML paragraph tags with single br (matches bash script)
-	assertContains(t, src, "&lt;p&gt;Hell yeah dude!")
-	assertContains(t, src, "&lt;br/&gt;&lt;p&gt;Generated using Stephan5/podcastinator.&lt;/p&gt;")
+	// The show's description goes in as it is, in itunes:summary too, which
+	// some apps read instead.
+	assertContains(t, src, "\n    <description>Hell yeah dude!</description>\n    <itunes:summary>Hell yeah dude!</itunes:summary>\n")
+}
+
+func TestBuildChannelDescriptionDefaultsToTitle(t *testing.T) {
+	xmlBytes, err := feedrss.Build(feedrss.FeedOptions{
+		Title:    "Bill & Ben",
+		FeedURL:  "https://podcasts.example.com/bb/feed.xml",
+		ImageURL: "https://podcasts.example.com/bb/image.jpg",
+	}, nil, io.Discard)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	assertContains(t, string(xmlBytes), "<description>Bill &amp; Ben</description>\n    <itunes:summary>Bill &amp; Ben</itunes:summary>")
 }
 
 func TestBuildLastBuildDateIsRFC2822(t *testing.T) {
@@ -334,21 +346,30 @@ func TestBuildValidatesDatesBeforeFetching(t *testing.T) {
 	}
 }
 
-func TestBuildDefaultDescriptionFallback(t *testing.T) {
+// TestBuildEpisodeDescriptions checks an episode's description goes in as it
+// is, and one without a description has none, rather than one made up from
+// its title and number, which apps show already.
+func TestBuildEpisodeDescriptions(t *testing.T) {
 	xmlBytes, _ := buildTestFeed(t)
 	src := string(xmlBytes)
-	// item 1 has no description → fallback "2002-06-29 - Episode 1 of Dudes Rock"
-	assertContains(t, src, "2002-06-29 - Episode 1 of Dudes Rock")
-	// item 4 (Inaugral Business) also has no description
-	assertContains(t, src, "Inaugral Business - Episode 4 of Dudes Rock")
-}
 
-func TestBuildGeneratedUsingLink(t *testing.T) {
-	xmlBytes, _ := buildTestFeed(t)
-	src := string(xmlBytes)
-	// Every item description should contain the "Generated using" link
-	assertContains(t, src, `href="https://github.com/Stephan5/podcastinator"`)
-	assertContains(t, src, "Generated using Stephan5/podcastinator")
+	items := regexp.MustCompile(`(?s)<item>.*?</item>`).FindAllString(src, -1)
+	if len(items) != len(testRecords) {
+		t.Fatalf("got %d items; want %d", len(items), len(testRecords))
+	}
+	for i, item := range items {
+		want := testRecords[i].Description
+		got := regexp.MustCompile(`(?s)<description>(.*?)</description>`).FindStringSubmatch(item)
+		switch {
+		case want == "" && got != nil:
+			t.Errorf("item %d has no description in the CSV, but got %q", i+1, got[1])
+		case want != "" && (got == nil || got[1] != want):
+			t.Errorf("item %d description = %v; want %q", i+1, got, want)
+		}
+	}
+	if strings.Contains(src, "Generated using") {
+		t.Error("the feed shouldn't credit podcastinator anywhere listeners see; <generator> does that")
+	}
 }
 
 func TestSetDefaultsOnlyFillsWebsiteURL(t *testing.T) {
@@ -980,8 +1001,8 @@ func TestStampedInputs(t *testing.T) {
 // bumped and feeds built by an older version count as stale. If the change is
 // deliberate, bump FormatVersion and set both constants here to the new values.
 func TestFormatVersion(t *testing.T) {
-	const wantVersion = 2
-	const wantHash = "a32ca9a1c2cabdcd529ebe1c1ffec649e5542b626c22b0e58f325f61bab0d4c3"
+	const wantVersion = 3
+	const wantHash = "a9e0f71ee1199021783a041377b5835756c53b9685b0712b19db7af6b926e4b4"
 
 	episodic, _ := buildTestFeed(t)
 	serial, err := feedrss.Build(feedrss.FeedOptions{
@@ -1101,7 +1122,7 @@ func TestBuildDurations(t *testing.T) {
 	// Written as seconds, whichever form the CSV has, and left out when unknown.
 	assertContains(t, src, "<itunes:episode>1</itunes:episode>\n      <itunes:duration>95</itunes:duration>\n")
 	assertContains(t, src, "<itunes:episode>2</itunes:episode>\n      <itunes:duration>3723</itunes:duration>\n")
-	assertContains(t, src, "<itunes:episode>3</itunes:episode>\n      <description>")
+	assertContains(t, src, "<itunes:episode>3</itunes:episode>\n      <pubDate>")
 	if err := xml.Unmarshal(xmlBytes, new(struct{})); err != nil {
 		t.Errorf("feed isn't valid XML: %v", err)
 	}

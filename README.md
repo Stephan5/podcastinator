@@ -52,7 +52,7 @@ podcastinator publish
 
 ### The CSV
 
-Columns are `title`, `description`, `date`, `url`, `guid`, `duration`, separated by the ASCII unit separator (`\x1F`) by default so titles and descriptions can contain commas and quotes without escaping. There's no quoting at all. Descriptions are stored HTML-escaped (`&lt;p&gt;`), as they go into the feed verbatim. Dates must be RFC 2822 (`Mon, 06 Jan 2025 09:00:00 GMT`); `dates` converts other formats. An empty description becomes `<title> - Episode <n> of <show>`. Every description ends with a "Generated using Stephan5/podcastinator" link.
+Columns are `title`, `description`, `date`, `url`, `guid`, `duration`, separated by the ASCII unit separator (`\x1F`) by default so titles and descriptions can contain commas and quotes without escaping. There's no quoting at all. Descriptions are stored HTML-escaped (`&lt;p&gt;`), as they go into the feed verbatim. Dates must be RFC 2822 (`Mon, 06 Jan 2025 09:00:00 GMT`); `dates` converts other formats. An episode with an empty description has none in the feed.
 
 Episodes are numbered in CSV order. The `guid` is what podcast apps identify an episode by, so it must never change. Leave it empty on a new row and `build` fills it in with a UUID; after that, the episode's URL can change (say, when `audio upload` moves it into your bucket) without apps seeing it as new. CSVs without the column still work, and `build` adds it. Episodes already published before the column existed keep their URL as their GUID, taken from the existing `feed.xml`, so subscribers don't see them again.
 
@@ -72,7 +72,7 @@ Episodes are numbered in CSV order. The `guid` is what podcast apps identify an 
 | Key           | Required | What it is                                                                                     |
 |---------------|----------|------------------------------------------------------------------------------------------------|
 | `title`       | Yes      | The show's name.                                                                               |
-| `description` | No       | The show's description.                                                                        |
+| `description` | No       | The show's description, written as `<description>` and `<itunes:summary>`. Defaults to the title. |
 | `author`      | No       | Who makes it.                                                                                  |
 | `website`     | No       | The show's own site, the feed's `<link>`. Defaults to this repo.                               |
 | `image`       | No       | The cover art's URL. Defaults to `<public_url>/<slug>/image.jpg`, from `hosting.json`.         |

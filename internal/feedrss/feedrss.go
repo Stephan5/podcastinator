@@ -30,7 +30,7 @@ const githubRepo = "Stephan5/podcastinator"
 // Build's output: feeds built before the change then count as out of date,
 // and publish refuses them until they're rebuilt. TestFormatVersion fails
 // until it's bumped.
-const FormatVersion = 2
+const FormatVersion = 3
 
 // DefaultConcurrency is how many Content-Length lookups Build makes at once
 // when FeedOptions.Concurrency isn't set.
@@ -116,7 +116,8 @@ var rssTemplate = template.Must(template.New("rss").Funcs(template.FuncMap{
   <channel>
     <atom:link href="{{xmlEscapeAttr .FeedURL}}" rel="self" type="application/rss+xml"/>
     <title>{{xmlEscape .Title}}</title>
-    <description>&lt;p&gt;{{xmlEscape .Description}} &lt;/p&gt;&lt;br/&gt;&lt;p&gt;Generated using {{.Repo}}.&lt;/p&gt;</description>
+    <description>{{xmlEscape .Description}}</description>
+    <itunes:summary>{{xmlEscape .Description}}</itunes:summary>
     {{- if .Author}}
     <itunes:author>{{xmlEscape .Author}}</itunes:author>
     {{- end}}
@@ -143,7 +144,9 @@ var rssTemplate = template.Must(template.New("rss").Funcs(template.FuncMap{
       {{- if .Duration}}
       <itunes:duration>{{.Duration}}</itunes:duration>
       {{- end}}
+      {{- if .Description}}
       <description>{{.Description}}</description>
+      {{- end}}
       <pubDate>{{.PubDate}}</pubDate>
       <enclosure url="{{xmlEscapeAttr .Link}}" length="{{.Length}}" type="{{.MimeType}}"/>
     </item>
@@ -192,7 +195,6 @@ func Build(opts FeedOptions, records []feedcsv.Record, logger io.Writer) ([]byte
 		return nil, fmt.Errorf("feed URL and image URL are required")
 	}
 
-	repoLink := fmt.Sprintf("https://github.com/%s", githubRepo)
 	buildDate := time.Now().UTC().Format("Mon, 02 Jan 2006 15:04:05 GMT")
 
 	// Use injected fetcher or fall back to real HTTP HEAD.
@@ -251,17 +253,6 @@ func Build(opts FeedOptions, records []feedcsv.Record, logger io.Writer) ([]byte
 		htmlURL := urlutil.HTMLEscape(encodedURL)
 		fmt.Fprintf(logger, "HTML encoded URL: %s\n", htmlURL)
 
-		// Build description — apply xmlEscapeText to both titles so any
-		// raw & (e.g. from "Bill & Ben") becomes &amp; in the XML.
-		desc := rec.Description
-		if desc == "" {
-			desc = fmt.Sprintf("%s - Episode %d of %s",
-				xmlEscapeText(rec.Title), num, xmlEscapeText(opts.Title))
-		}
-		// Append "Generated using" link using literal HTML (not Go %q quoting)
-		desc = fmt.Sprintf(`%s &lt;br/&gt;&lt;br/&gt;&lt;a href="%s" rel="nofollow noopener" target="_blank"&gt;Generated using %s&lt;/a&gt;`,
-			desc, repoLink, githubRepo)
-
 		// Detect MIME type
 		cleanURL := urlutil.StripQuery(encodedURL)
 		ext := ""
@@ -283,7 +274,7 @@ func Build(opts FeedOptions, records []feedcsv.Record, logger io.Writer) ([]byte
 			Number:      num,
 			Duration:    durations[i],
 			Title:       rec.Title,
-			Description: desc,
+			Description: rec.Description,
 			PubDate:     rec.Date,
 			Link:        htmlURL,
 			GUID:        guid,
@@ -294,9 +285,16 @@ func Build(opts FeedOptions, records []feedcsv.Record, logger io.Writer) ([]byte
 		fmt.Fprintln(logger)
 	}
 
+	// RSS requires a channel description, so a show without one gets its
+	// title. Apps show it as the show's notes.
+	description := opts.Description
+	if description == "" {
+		description = opts.Title
+	}
+
 	data := rssTemplateData{
 		Title:       opts.Title,
-		Description: opts.Description,
+		Description: description,
 		Author:      opts.Author,
 		WebsiteURL:  opts.WebsiteURL,
 		ImageURL:    opts.ImageURL,
