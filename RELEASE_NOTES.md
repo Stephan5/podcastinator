@@ -2,6 +2,12 @@
 
 Newest first. A release's description on GitHub is its section here.
 
+## Unreleased
+
+### Removed
+
+* **Episode durations**, added in 0.11.0. Most podcast MP3s have no header giving their length, so `durations` could only estimate it from the bitrate, which is a few percent out for variable-bitrate files, for a length apps only show before an episode is downloaded. The `durations` command, the `duration` column and `<itunes:duration>` are gone, and `import` and `update` no longer copy durations from the source. Feeds don't need rebuilding.
+
 ## 0.11.0
 
 ### Added

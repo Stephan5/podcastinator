@@ -23,7 +23,7 @@ jobs:
       - name: Set up dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libxml2-utils xmlstarlet ffmpeg
+          sudo apt-get install -y libxml2-utils xmlstarlet
 
       # Local S3 (SeaweedFS) for the publish/selfhost integration tests. Its S3
       # gateway makes an admin identity from the AWS_* credentials it's given.

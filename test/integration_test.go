@@ -468,7 +468,7 @@ func TestImportFromFile(t *testing.T) {
 		t.Fatalf("expected feed.csv: %v", err)
 	}
 	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
-	if lines[0] != "title\x1fdescription\x1fdate\x1furl\x1fguid\x1fduration" {
+	if lines[0] != "title\x1fdescription\x1fdate\x1furl\x1fguid" {
 		t.Errorf("unexpected header %q", lines[0])
 	}
 	if len(lines) != 7 {
@@ -478,7 +478,7 @@ func TestImportFromFile(t *testing.T) {
 	seen := map[string]bool{}
 	for _, line := range lines[1:] {
 		fields := strings.Split(line, "\x1f")
-		guid := fields[4]
+		guid := fields[len(fields)-1]
 		if !uuidPattern.MatchString(guid) || seen[guid] {
 			t.Errorf("expected a new, distinct UUID, got %q in %q", guid, line)
 		}
@@ -669,7 +669,7 @@ func TestImportBuildUpdate(t *testing.T) {
 	}
 	csv, _ := os.ReadFile(filepath.Join(dir, "feed.csv"))
 	if got := uuidPattern.ReplaceAllString(string(csv), "UUID"); !strings.HasSuffix(got,
-		"Episode Three\x1fNew &amp; improved\x1fWed, 03 Jan 2024 09:00:00 GMT\x1f"+srv.URL+"/episode-three.mp3\x1fUUID\x1f\n") {
+		"Episode Three\x1fNew &amp; improved\x1fWed, 03 Jan 2024 09:00:00 GMT\x1f"+srv.URL+"/episode-three.mp3\x1fUUID\n") {
 		t.Errorf("expected Episode Three appended:\n%s", csv)
 	}
 
@@ -758,8 +758,7 @@ func TestBuildKeepsPublishedGUIDs(t *testing.T) {
 	// The GUIDs are now in the CSV, so moving an episode doesn't change its GUID.
 	csvPath := filepath.Join(dir, "feed.csv")
 	csv, _ := os.ReadFile(csvPath)
-	// Only the first match is the url column; the guid column has the old URL too.
-	os.WriteFile(csvPath, []byte(strings.Replace(string(csv), "/ep1.mp3\x1f", "/moved/ep1.mp3\x1f", 1)), 0644)
+	os.WriteFile(csvPath, []byte(strings.ReplaceAll(string(csv), "/ep1.mp3\x1f", "/moved/ep1.mp3\x1f")), 0644)
 	if out, code := run("build", "--feed-dir", feedRoot); code != 0 {
 		t.Fatalf("build exited %d:\n%s", code, out)
 	}
@@ -823,74 +822,6 @@ func TestDates(t *testing.T) {
 
 	if _, code := run("dates", "show", "--feed-dir", feedRoot); code == 0 {
 		t.Error("expected dates without --from to fail")
-	}
-}
-
-// TestDurations fills in durations with ffprobe, for remote and local audio,
-// keeps the ones already there and the ones it finds when another fails, and
-// build writes them out.
-func TestDurations(t *testing.T) {
-	if _, err := exec.LookPath("ffprobe"); err != nil {
-		t.Skip("needs ffprobe")
-	}
-	audio := audioServer(t)
-	feedRoot := t.TempDir()
-	writeHosting(t, feedRoot)
-	dir := writeFeed(t, feedRoot, "show", `{"title":"Show"}`,
-		episode("Remote", "Sat, 29 Jun 2002 03:00:00 GMT", audio+"/remote.mp3"),
-		episode("Local", "Sun, 30 Jun 2002 03:00:00 GMT", "file://local.mp3"),
-		episode("Known", "Mon, 01 Jul 2002 03:00:00 GMT", audio+"/known.mp3")+"\x1f\x1f1:00",
-		episode("Missing", "Tue, 02 Jul 2002 03:00:00 GMT", "file://missing.mp3"))
-	mp3, _ := os.ReadFile("testdata/test.mp3")
-	os.WriteFile(filepath.Join(dir, "local.mp3"), mp3, 0644)
-
-	// test.mp3 is 4 seconds long.
-	out, code := run("durations", "--feed-dir", feedRoot)
-	if code == 0 || !strings.Contains(out, "show: 2 duration(s) added, 1 failed") ||
-		!strings.Contains(out, `episode 4 "Missing": ffprobe:`) || !strings.Contains(out, "1 episode(s) still have no duration") {
-		t.Errorf("expected durations to fail for the missing file only, exit %d:\n%s", code, out)
-	}
-	csv, _ := os.ReadFile(filepath.Join(dir, "feed.csv"))
-	var got []string
-	for _, line := range strings.Split(strings.TrimSpace(string(csv)), "\n")[1:] {
-		fields := strings.Split(line, "\x1f")
-		got = append(got, fields[0]+"="+fields[5])
-	}
-	if want := "Remote=4 Local=4 Known=1:00 Missing="; strings.Join(got, " ") != want {
-		t.Errorf("durations = %q; want %q", strings.Join(got, " "), want)
-	}
-
-	// Once nothing's missing there's nothing to do.
-	csv = bytes.ReplaceAll(csv, []byte("file://missing.mp3"), []byte("file://local.mp3"))
-	os.WriteFile(filepath.Join(dir, "feed.csv"), csv, 0644)
-	if out, code := run("durations", "show", "--feed-dir", feedRoot); code != 0 || !strings.Contains(out, "show: 1 duration(s) added, 0 failed") {
-		t.Errorf("durations exited %d:\n%s", code, out)
-	}
-	if out, code := run("durations", "--feed-dir", feedRoot); code != 0 || !strings.Contains(out, "show: every episode has a duration") {
-		t.Errorf("durations with nothing missing exited %d:\n%s", code, out)
-	}
-
-	// build writes them as seconds. Its Content-Length lookups need http URLs.
-	csv, _ = os.ReadFile(filepath.Join(dir, "feed.csv"))
-	os.WriteFile(filepath.Join(dir, "feed.csv"), bytes.ReplaceAll(csv, []byte("file://"), []byte(audio+"/")), 0644)
-	if out, code := run("build", "--feed-dir", feedRoot); code != 0 {
-		t.Fatalf("build exited %d:\n%s", code, out)
-	}
-	feedXML, _ := os.ReadFile(filepath.Join(dir, "feed.xml"))
-	durations := regexp.MustCompile(`<itunes:duration>(\d+)</itunes:duration>`).FindAllStringSubmatch(string(feedXML), -1)
-	if len(durations) != 4 || durations[0][1] != "4" || durations[2][1] != "60" {
-		t.Errorf("itunes:duration tags = %v; want 4 of them, the third 60:\n%s", durations, feedXML)
-	}
-}
-
-func TestDurationsNeedsFFprobe(t *testing.T) {
-	feedRoot := t.TempDir()
-	writeFeed(t, feedRoot, "show", `{"title":"Show"}`)
-	cmd := exec.Command(binary, "durations", "--feed-dir", feedRoot)
-	cmd.Env = append(os.Environ(), "PATH="+t.TempDir())
-	out, err := cmd.CombinedOutput()
-	if err == nil || !strings.Contains(string(out), "durations needs ffprobe") {
-		t.Errorf("expected durations without ffprobe to fail, err %v:\n%s", err, out)
 	}
 }
 

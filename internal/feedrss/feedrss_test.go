@@ -1028,7 +1028,7 @@ func TestStampedInputs(t *testing.T) {
 // deliberate, bump FormatVersion and set both constants here to the new values.
 func TestFormatVersion(t *testing.T) {
 	const wantVersion = 4
-	const wantHash = "26840a4c15e397a5784e7304b5b5237cb7cc573df1a558edf6f5998d58d31740"
+	const wantHash = "3ddf8f3dfbc05e77c908792f658619334332f099b3563d3f7b8e9117af6564c4"
 
 	episodic, _ := buildTestFeed(t)
 	serial, err := feedrss.Build(feedrss.FeedOptions{
@@ -1040,7 +1040,7 @@ func TestFormatVersion(t *testing.T) {
 		ContentLengthFetcher: mockFetcher("1"),
 	}, []feedcsv.Record{
 		{Title: "Legacy", Date: "Sat, 29 Jun 2002 03:00:00 GMT", URL: "https://example.com/new/1.mp3", GUID: "https://example.com/old/1.mp3"},
-		{Title: "New", Date: "Sun, 30 Jun 2002 03:00:00 GMT", URL: "https://example.com/2.mp3", GUID: "6f1c1e0a-3b5d-4c2e-9f7a-2d8b4e6a1c3f", Duration: "1:02:03"},
+		{Title: "New", Date: "Sun, 30 Jun 2002 03:00:00 GMT", URL: "https://example.com/2.mp3", GUID: "6f1c1e0a-3b5d-4c2e-9f7a-2d8b4e6a1c3f"},
 	}, io.Discard)
 	if err != nil {
 		t.Fatalf("Build: %v", err)
@@ -1126,75 +1126,4 @@ func TestBuildItunesTypeAndEpisodeNumbers(t *testing.T) {
 		}
 	}
 	assertContains(t, src, "<title>2002-06-29</title>\n      <itunes:episode>1</itunes:episode>")
-}
-
-func TestBuildDurations(t *testing.T) {
-	opts := feedrss.FeedOptions{
-		Title:                "Test",
-		FeedURL:              "https://podcasts.example.com/test/feed.xml",
-		ImageURL:             "https://podcasts.example.com/test/image.jpg",
-		ContentLengthFetcher: mockFetcher("1"),
-	}
-	records := []feedcsv.Record{
-		{Title: "Seconds", Date: "Sat, 29 Jun 2002 03:00:00 GMT", URL: "https://example.com/1.mp3", Duration: "95"},
-		{Title: "Clock", Date: "Sun, 30 Jun 2002 03:00:00 GMT", URL: "https://example.com/2.mp3", Duration: "1:02:03"},
-		{Title: "Unknown", Date: "Mon, 01 Jul 2002 03:00:00 GMT", URL: "https://example.com/3.mp3"},
-	}
-	xmlBytes, err := feedrss.Build(opts, records, io.Discard)
-	if err != nil {
-		t.Fatalf("Build: %v", err)
-	}
-	src := string(xmlBytes)
-	// Written as seconds, whichever form the CSV has, and left out when unknown.
-	assertContains(t, src, "<itunes:episode>1</itunes:episode>\n      <itunes:duration>95</itunes:duration>\n")
-	assertContains(t, src, "<itunes:episode>2</itunes:episode>\n      <itunes:duration>3723</itunes:duration>\n")
-	assertContains(t, src, "<itunes:episode>3</itunes:episode>\n      <pubDate>")
-	if err := xml.Unmarshal(xmlBytes, new(struct{})); err != nil {
-		t.Errorf("feed isn't valid XML: %v", err)
-	}
-
-	// It reads back as seconds.
-	parsed, err := feedrss.Parse(bytes.NewReader(xmlBytes))
-	if err != nil {
-		t.Fatalf("Parse: %v", err)
-	}
-	for i, want := range []string{"95", "3723", ""} {
-		if parsed.Records[i].Duration != want {
-			t.Errorf("parsed record %d Duration = %q; want %q", i, parsed.Records[i].Duration, want)
-		}
-	}
-
-	// A duration that doesn't parse fails the build before any requests.
-	records[2].Duration = "an hour"
-	opts.ContentLengthFetcher = func(string) (string, error) {
-		t.Error("fetched a Content-Length despite a bad duration")
-		return "1", nil
-	}
-	if _, err := feedrss.Build(opts, records, io.Discard); err == nil || !strings.Contains(err.Error(), `item 3 ("Unknown"): invalid duration "an hour"`) {
-		t.Errorf("Build with a bad duration: err = %v", err)
-	}
-}
-
-func TestParseDurations(t *testing.T) {
-	const src = `<?xml version="1.0" encoding="UTF-8"?>
-<rss version="2.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd">
-  <channel>
-    <title>Show</title>
-    <item><title>A</title><pubDate>Sat, 29 Jun 2002 03:00:00 GMT</pubDate><itunes:duration>01:02:03</itunes:duration><enclosure url="https://example.com/a.mp3"/></item>
-    <item><title>B</title><pubDate>Sun, 30 Jun 2002 03:00:00 GMT</pubDate><itunes:duration>612.6</itunes:duration><enclosure url="https://example.com/b.mp3"/></item>
-    <item><title>C</title><pubDate>Mon, 01 Jul 2002 03:00:00 GMT</pubDate><itunes:duration>about an hour</itunes:duration><enclosure url="https://example.com/c.mp3"/></item>
-    <item><title>D</title><pubDate>Tue, 02 Jul 2002 03:00:00 GMT</pubDate><enclosure url="https://example.com/d.mp3"/></item>
-  </channel>
-</rss>`
-
-	feed, err := feedrss.Parse(strings.NewReader(src))
-	if err != nil {
-		t.Fatalf("Parse: %v", err)
-	}
-	// Seconds, whatever form the feed used; one that doesn't parse is dropped.
-	for i, want := range []string{"3723", "613", "", ""} {
-		if feed.Records[i].Duration != want {
-			t.Errorf("record %d (%s) Duration = %q; want %q", i, feed.Records[i].Title, feed.Records[i].Duration, want)
-		}
-	}
 }

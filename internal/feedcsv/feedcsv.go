@@ -1,8 +1,7 @@
 // Package feedcsv handles reading and writing podcast feed CSV files.
 // The CSV format uses a configurable delimiter (default \x1F unit separator)
-// with columns: title, description, date, url, guid, duration. The guid and
-// duration columns were added later, so files without them still read, with
-// those fields empty.
+// with columns: title, description, date, url, guid. The guid column was
+// added later, so files without it still read, with every GUID empty.
 //
 // No CSV quoting is used — fields are split/joined on the raw delimiter
 // character, matching the behaviour of the original bash scripts. This avoids
@@ -28,12 +27,10 @@ type Record struct {
 	// GUID identifies the episode to podcast apps, so it must never change.
 	// Empty means not yet assigned.
 	GUID string
-	// Duration is the episode's length in whole seconds. Empty means unknown.
-	Duration string
 }
 
 // Header is the CSV's header row.
-var Header = []string{"title", "description", "date", "url", "guid", "duration"}
+var Header = []string{"title", "description", "date", "url", "guid"}
 
 // Read reads a CSV feed file and returns the records (excluding the header).
 // Fields are split on delim without any quoting interpretation.
@@ -59,7 +56,6 @@ func Read(path string, delim rune) ([]Record, error) {
 			Date:        fields[2],
 			URL:         fields[3],
 			GUID:        fields[4],
-			Duration:    fields[5],
 		})
 	}
 	return records, nil
@@ -73,7 +69,7 @@ func Write(path string, delim rune, records []Record) error {
 	sb.WriteString(strings.Join(Header, d))
 	sb.WriteByte('\n')
 	for _, rec := range records {
-		sb.WriteString(strings.Join([]string{rec.Title, rec.Description, rec.Date, rec.URL, rec.GUID, rec.Duration}, d))
+		sb.WriteString(strings.Join([]string{rec.Title, rec.Description, rec.Date, rec.URL, rec.GUID}, d))
 		sb.WriteByte('\n')
 	}
 	if err := os.WriteFile(path, []byte(sb.String()), 0644); err != nil {
