@@ -11,11 +11,13 @@ It's handy for archiving shows that are disappearing, stitching together episode
 go install github.com/Stephan5/podcastinator/cmd/podcastinator@latest
 ```
 
-Or build from a clone, which writes `build/podcastinator`:
+Or download a binary for Linux or macOS from the [latest release](https://github.com/Stephan5/podcastinator/releases/latest), or build from a clone, which writes `build/podcastinator`:
 
 ```shell
 make build
 ```
+
+macOS blocks binaries downloaded from the internet that aren't signed. Clear the flag before the first run: `xattr -d com.apple.quarantine podcastinator`.
 
 ## Quick start
 
@@ -272,6 +274,17 @@ make test-all           # both
 ```
 
 The `publish` integration tests need an S3 endpoint (`AWS_ENDPOINT_URL`) and skip without one. CI runs them against [SeaweedFS](https://github.com/seaweedfs/seaweedfs); see `.github/workflows/main.yml` to do the same locally.
+
+### Releasing
+
+Set `version` in [`cmd/podcastinator/version.go`](cmd/podcastinator/version.go) and add a section at the top of [`CHANGELOG.md`](CHANGELOG.md), headed `## <version>`, and commit them. Older versions' sections stay below as the history. Then push a tag that matches the version:
+
+```shell
+git tag v0.3.0
+git push origin v0.3.0
+```
+
+That runs the tests, builds binaries for Linux and macOS, and attaches them to a GitHub release with that version's section as its description (see [`release.yml`](.github/workflows/release.yml)). The workflow refuses to release if the tag doesn't match the version, or the changelog has no section for it. Push the tag rather than making the release on GitHub, which would leave the workflow nothing to create.
 
 ## License
 

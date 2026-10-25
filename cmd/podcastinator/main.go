@@ -8,8 +8,9 @@ import (
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "podcastinator",
-	Short: "Podcast RSS feed management tool",
+	Use:     "podcastinator",
+	Version: version,
+	Short:   "Podcast RSS feed management tool",
 	Long: `podcastinator is a CLI tool for managing podcast RSS feeds.
 
 It can convert between CSV and RSS XML formats, self-host episode files

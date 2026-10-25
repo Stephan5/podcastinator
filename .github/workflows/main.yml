@@ -5,6 +5,8 @@ on:
     branches: [ "**" ]
   pull_request:
     branches: [ "**" ]
+  # So a release can run them first
+  workflow_call:
 
 jobs:
   test:

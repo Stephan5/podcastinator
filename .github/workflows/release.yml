@@ -1,0 +1,62 @@
+name: Release
+
+# Pushing a version tag, e.g. v0.3.0, builds the binaries and attaches them to a GitHub release
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  # Nothing is released unless the tests pass on the tagged commit
+  test:
+    uses: ./.github/workflows/main.yml
+
+  release:
+    needs: test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Check the tag matches the version, and find its changelog
+        run: |
+          version=$(sed -n 's/^const version = "\(.*\)"$/\1/p' cmd/podcastinator/version.go)
+          if [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "Tag $GITHUB_REF_NAME doesn't match version $version in cmd/podcastinator/version.go" >&2
+            exit 1
+          fi
+          # The release's description is its section of the changelog, from its heading to the next version's
+          awk -v heading="## $version" \
+            '$0 == heading {found = 1; next} found && /^## / {exit} found' \
+            CHANGELOG.md > "$RUNNER_TEMP/release-notes.md"
+          if ! grep -q '[^[:space:]]' "$RUNNER_TEMP/release-notes.md"; then
+            echo "CHANGELOG.md has no notes under '## $version'" >&2
+            exit 1
+          fi
+          echo "NOTES=$RUNNER_TEMP/release-notes.md" >> "$GITHUB_ENV"
+
+      - name: Build
+        run: make build-linux build-darwin-arm64 build-darwin-amd64
+
+      # One archive per platform, holding the binary as podcastinator, plus a checksum for each
+      - name: Package
+        run: |
+          for platform in linux-amd64 darwin-arm64 darwin-amd64; do
+            name="podcastinator-$GITHUB_REF_NAME-$platform"
+            mkdir "$name"
+            cp "build/podcastinator-$platform" "$name/podcastinator"
+            cp README.md LICENSE CHANGELOG.md "$name"
+            tar -czf "$name.tar.gz" "$name"
+            sha256sum "$name.tar.gz" > "$name.tar.gz.sha256"
+          done
+
+      - name: Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" podcastinator-*.tar.gz* --title "$GITHUB_REF_NAME" --notes-file "$NOTES"

@@ -882,3 +882,13 @@ func TestCSV2RSSUsesHostingURLs(t *testing.T) {
 		}
 	}
 }
+
+func TestVersion(t *testing.T) {
+	out, code := run("--version")
+	if code != 0 {
+		t.Fatalf("--version exited %d: %s", code, out)
+	}
+	if !strings.HasPrefix(out, "podcastinator version ") {
+		t.Errorf("--version printed %q", out)
+	}
+}
