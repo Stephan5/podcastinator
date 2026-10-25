@@ -2,7 +2,7 @@
 
 Newest first. A release's description on GitHub is its section here.
 
-## Unreleased
+## 0.12.0
 
 ### Removed
 
