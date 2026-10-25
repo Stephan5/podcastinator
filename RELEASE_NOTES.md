@@ -26,7 +26,7 @@ The commands are reorganised around the three jobs: importing a feed, building i
 
 ### Fixed
 
-* Imported descriptions are HTML-escaped and flattened onto one line. `rss2csv` wrote them raw, so a description with HTML built into invalid XML, and one with a newline broke the CSV.
+* Imported descriptions are HTML-escaped, and titles and descriptions have their whitespace, newlines included, collapsed to single spaces. `rss2csv` wrote them raw, so a description with HTML built into invalid XML, and one with a newline broke the CSV.
 * Importing no longer takes a feed's `<atom:link>` for its website, which happened when it came after `<link>`.
 * `feed.json` is written with `&` rather than `\u0026`.
 

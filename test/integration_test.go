@@ -9,7 +9,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"image"
-	"image/png"
+	_ "image/jpeg"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -485,8 +485,83 @@ func TestImportFromFile(t *testing.T) {
 	}
 }
 
+// TestImportFixture imports testdata/import/source.xml, a feed in the shape
+// third-party hosts produce, and compares the feed directory it writes with
+// testdata/import/want: feed.csv (UUIDs masked) and feed.json byte for byte,
+// and image.jpg converted from art.png. {{base}} in the fixtures stands for
+// the test server's URL.
+func TestImportFixture(t *testing.T) {
+	const fixtures = "testdata/import"
+	var srv *httptest.Server
+	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/source.xml":
+			data, _ := os.ReadFile(filepath.Join(fixtures, "source.xml"))
+			w.Write(bytes.ReplaceAll(data, []byte("{{base}}"), []byte(srv.URL)))
+		case "/art.png":
+			http.ServeFile(w, r, filepath.Join(fixtures, "art.png"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	feedRoot := t.TempDir()
+	out, code := run("import", srv.URL+"/source.xml", "--feed-dir", feedRoot)
+	if code != 0 {
+		t.Fatalf("import exited %d:\n%s", code, out)
+	}
+	if !strings.Contains(out, `Warning: skipping "A note about our schedule", which has no audio URL`) {
+		t.Errorf("expected the item without audio to be reported as skipped:\n%s", out)
+	}
+
+	// The slug comes from the title.
+	dir := filepath.Join(feedRoot, "bill-ben-s-garden")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("import didn't create the feed directory: %v\n%s", err, out)
+	}
+	var names []string
+	for _, e := range entries {
+		names = append(names, e.Name())
+	}
+	if got := strings.Join(names, " "); got != "feed.csv feed.json image.jpg" {
+		t.Errorf("feed directory holds %q; want feed.csv, feed.json and image.jpg", got)
+	}
+
+	for _, name := range []string{"feed.csv", "feed.json"} {
+		want, err := os.ReadFile(filepath.Join(fixtures, "want", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		want = bytes.ReplaceAll(want, []byte("{{base}}"), []byte(srv.URL))
+		got, _ := os.ReadFile(filepath.Join(dir, name))
+		got = uuidPattern.ReplaceAll(got, []byte("UUID"))
+		if !bytes.Equal(got, want) {
+			t.Errorf("%s differs from %s/want/%s.\ngot:\n%q\nwant:\n%q", name, fixtures, name, got, want)
+		}
+	}
+
+	// Each episode has its own UUID, not the source's GUID.
+	csv, _ := os.ReadFile(filepath.Join(dir, "feed.csv"))
+	if ids := uuidPattern.FindAll(csv, -1); len(ids) != 3 || bytes.Equal(ids[0], ids[1]) || bytes.Equal(ids[1], ids[2]) {
+		t.Errorf("expected 3 distinct UUIDs:\n%s", csv)
+	}
+
+	// image.jpg is itunes:image's PNG (not <image>'s small.jpg), converted to JPEG.
+	art, err := os.Open(filepath.Join(dir, "image.jpg"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer art.Close()
+	cfg, format, err := image.DecodeConfig(art)
+	if err != nil || format != "jpeg" || cfg.Width != 30 || cfg.Height != 20 {
+		t.Errorf("image.jpg: format %q, %dx%d, err %v; want a 30x20 JPEG", format, cfg.Width, cfg.Height, err)
+	}
+}
+
 // sourceServer serves a source feed, rendered from the given items on every
-// request, along with PNG cover art and episode audio.
+// request, along with episode audio.
 func sourceServer(t *testing.T, items *[]string) *httptest.Server {
 	t.Helper()
 	var srv *httptest.Server
@@ -500,15 +575,9 @@ func sourceServer(t *testing.T, items *[]string) *httptest.Server {
     <link>https://example.com/bill-and-ben</link>
     <atom:link href="%s/feed.rss" rel="self" type="application/rss+xml"/>
     <description>Flowerpot men.</description>
-    <itunes:author>BBC</itunes:author>
-    <image><url>%s/small.jpg</url></image>
-    <itunes:image href="%s/art.png"/>
     %s
   </channel>
-</rss>`, srv.URL, srv.URL, srv.URL, strings.Join(*items, "\n"))
-		case "/art.png":
-			img := image.NewRGBA(image.Rect(0, 0, 4, 4))
-			png.Encode(w, img) //nolint:errcheck
+</rss>`, srv.URL, strings.Join(*items, "\n"))
 		default:
 			http.ServeFile(w, r, "testdata/test.mp3")
 		}
@@ -528,7 +597,7 @@ func urlSafe(s string) string {
 }
 
 // TestImportBuildUpdate imports a feed from a URL, builds it, and picks up a
-// new episode with update.
+// new episode with update. TestImportFixture checks what import writes.
 func TestImportBuildUpdate(t *testing.T) {
 	var items []string
 	srv := sourceServer(t, &items)
@@ -545,36 +614,6 @@ func TestImportBuildUpdate(t *testing.T) {
 		t.Fatalf("import exited %d:\n%s", code, out)
 	}
 	dir := filepath.Join(feedRoot, "bill-ben")
-
-	cfg, _ := os.ReadFile(filepath.Join(dir, "feed.json"))
-	for _, want := range []string{
-		`"title": "Bill & Ben"`,
-		`"author": "BBC"`,
-		`"website": "https://example.com/bill-and-ben"`,
-		`"source": "` + srv.URL + `/feed.rss"`,
-	} {
-		if !strings.Contains(string(cfg), want) {
-			t.Errorf("expected %s in feed.json:\n%s", want, cfg)
-		}
-	}
-
-	// itunes:image wins over <image>, and the PNG is converted.
-	art, err := os.ReadFile(filepath.Join(dir, "image.jpg"))
-	if err != nil {
-		t.Fatalf("expected image.jpg: %v", err)
-	}
-	if ct := http.DetectContentType(art); ct != "image/jpeg" {
-		t.Errorf("image.jpg is %s, want image/jpeg", ct)
-	}
-
-	// Oldest first, with the multi-line description flattened onto its row.
-	csv, _ := os.ReadFile(filepath.Join(dir, "feed.csv"))
-	want := "title\x1fdescription\x1fdate\x1furl\x1fguid\n" +
-		episode("Episode One", "Mon, 01 Jan 2024 09:00:00 GMT", srv.URL+"/episode-one.mp3") + "\x1fUUID\n" +
-		"Episode Two\x1f&lt;p&gt;Weeds and pots&lt;/p&gt;\x1fTue, 02 Jan 2024 09:00:00 GMT\x1f" + srv.URL + "/episode-two.mp3\x1fUUID\n"
-	if got := uuidPattern.ReplaceAllString(string(csv), "UUID"); got != want {
-		t.Errorf("feed.csv:\n%q\nwant:\n%q", got, want)
-	}
 
 	out, code = run("build", "--feed-dir", feedRoot)
 	if code != 0 {
@@ -594,7 +633,7 @@ func TestImportBuildUpdate(t *testing.T) {
 	if code != 0 || !strings.Contains(out, "1 new episode(s)") {
 		t.Fatalf("update exited %d:\n%s", code, out)
 	}
-	csv, _ = os.ReadFile(filepath.Join(dir, "feed.csv"))
+	csv, _ := os.ReadFile(filepath.Join(dir, "feed.csv"))
 	if got := uuidPattern.ReplaceAllString(string(csv), "UUID"); !strings.HasSuffix(got,
 		"Episode Three\x1fNew &amp; improved\x1fWed, 03 Jan 2024 09:00:00 GMT\x1f"+srv.URL+"/episode-three.mp3\x1fUUID\n") {
 		t.Errorf("expected Episode Three appended:\n%s", csv)

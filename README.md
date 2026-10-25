@@ -317,6 +317,8 @@ make test-integration   # build the binary and run the black-box tests in test/
 make test-all           # both
 ```
 
+`TestImportFixture` imports [`test/testdata/import/source.xml`](test/testdata/import/source.xml), a feed shaped like a third-party host's, and compares the result with the files in `want/`; add a case by editing the source and the expected files together.
+
 The `publish` and `audio prune` integration tests need an S3 endpoint (`AWS_ENDPOINT_URL`) and skip without one. CI runs them against [SeaweedFS](https://github.com/seaweedfs/seaweedfs); see `.github/workflows/main.yml` to do the same locally.
 
 ### Releasing

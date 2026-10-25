@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A source feed in the shape third-party podcast hosts produce, for
+  TestImportFixture. {{base}} is replaced with the test server's URL.
+-->
+<rss version="2.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+  <channel>
+    <title>Bill &amp; Ben's Garden</title>
+    <!-- The website. atom:link comes after it and must not replace it. -->
+    <link>https://example.com/bill-and-ben</link>
+    <atom:link href="{{base}}/source.xml" rel="self" type="application/rss+xml"/>
+    <description><![CDATA[Two flowerpot men talk weeds.]]></description>
+    <itunes:author>Weed Productions</itunes:author>
+    <!-- The small <image> loses to itunes:image, the full-size artwork. small.jpg isn't served. -->
+    <image>
+      <url>{{base}}/small.jpg</url>
+      <title>Bill &amp; Ben's Garden</title>
+      <link>https://example.com/bill-and-ben</link>
+    </image>
+    <itunes:image href="{{base}}/art.png"/>
+
+    <!-- Newest first, as hosts list them; import sorts oldest first. -->
+    <item>
+      <title>
+        Episode 3: Weeds
+        Strike Back
+      </title>
+      <!-- HTML in CDATA, over several lines, with a raw ampersand. -->
+      <description><![CDATA[<p>Weed is back.</p>
+<p>Bill & Ben fight back.</p>]]></description>
+      <pubDate>Wed, 03 Jan 2024 18:30:00 +0100</pubDate>
+      <guid isPermaLink="false">host-guid-3</guid>
+      <enclosure url="https://cdn.example.com/bb/ep3.mp3?source=rss&amp;id=3" length="1000" type="audio/mpeg"/>
+    </item>
+
+    <!-- No enclosure and no link: nothing to play, so it's dropped. -->
+    <item>
+      <title>A note about our schedule</title>
+      <description>Back next week.</description>
+      <pubDate>Tue, 02 Jan 2024 12:00:00 GMT</pubDate>
+      <guid isPermaLink="false">host-guid-note</guid>
+    </item>
+
+    <item>
+      <title>Episode 2: Pots</title>
+      <!-- Entity-escaped HTML rather than CDATA. -->
+      <description>&lt;p&gt;All about pots &amp;amp; pans.&lt;/p&gt;</description>
+      <pubDate>Tue, 02 Jan 2024 09:00:00 GMT</pubDate>
+      <guid isPermaLink="false">host-guid-2</guid>
+      <enclosure url="https://cdn.example.com/bb/ep2.m4a" length="1000" type="audio/x-m4a"/>
+    </item>
+
+    <item>
+      <title>Episode 1: Flobbadob</title>
+      <pubDate>Mon, 01 Jan 2024 09:00:00 GMT</pubDate>
+      <guid isPermaLink="false">host-guid-1</guid>
+      <enclosure url="https://cdn.example.com/bb/ep1.mp3" length="1000" type="audio/mpeg"/>
+    </item>
+  </channel>
+</rss>

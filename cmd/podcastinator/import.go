@@ -257,14 +257,16 @@ func httpGet(url string) ([]byte, error) {
 }
 
 // cleanRecords makes parsed episodes safe to store in a CSV, which has no
-// quoting: newlines and the delimiter become spaces. Descriptions are stored
+// quoting: runs of whitespace, newlines included, and the delimiter become
+// single spaces. Descriptions are stored
 // HTML-escaped, as build writes them into the feed verbatim. Each episode
 // gets a new UUID for its GUID, rather than the source's. Episodes with no
 // audio URL are dropped.
 func cleanRecords(records []feedcsv.Record, delim rune) []feedcsv.Record {
-	flatten := strings.NewReplacer("\r\n", " ", "\n", " ", "\r", " ", string(delim), " ")
 	escape := strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;")
-	clean := func(s string) string { return strings.TrimSpace(flatten.Replace(s)) }
+	clean := func(s string) string {
+		return strings.Join(strings.Fields(strings.ReplaceAll(s, string(delim), " ")), " ")
+	}
 
 	out := make([]feedcsv.Record, 0, len(records))
 	for _, rec := range records {
