@@ -12,6 +12,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"text/template"
 	"time"
 
@@ -21,6 +23,14 @@ import (
 )
 
 const githubRepo = "Stephan5/podcastinator"
+
+// DefaultConcurrency is how many Content-Length lookups Build makes at once
+// when FeedOptions.Concurrency isn't set.
+const DefaultConcurrency = 16
+
+// httpClient makes the HEAD requests. The timeout stops one unresponsive host
+// from hanging a build.
+var httpClient = &http.Client{Timeout: 30 * time.Second}
 
 // FeedOptions contains podcast-level metadata for building an RSS feed.
 type FeedOptions struct {
@@ -38,7 +48,12 @@ type FeedOptions struct {
 
 	// ContentLengthFetcher is called to retrieve the Content-Length for each episode
 	// URL. If nil, an HTTP HEAD request is used. Override in tests.
+	// It's called concurrently, so it must be safe for that.
 	ContentLengthFetcher func(url string) (string, error)
+
+	// Concurrency is how many Content-Length lookups run at once. Zero or
+	// less means DefaultConcurrency.
+	Concurrency int
 }
 
 // SetDefaults fills in the website link, which defaults to this tool's GitHub
@@ -165,30 +180,39 @@ func Build(opts FeedOptions, records []feedcsv.Record, logger io.Writer) ([]byte
 		fetcher = fetchContentLength
 	}
 
+	// Check every record before making any requests, so bad data fails fast.
+	encodedURLs := make([]string, len(records))
+	for i, rec := range records {
+		num := i + 1
+		if err := dateutil.ValidateRFC2822(rec.Date); err != nil {
+			return nil, fmt.Errorf("item %d (%q): %w", num, rec.Title, err)
+		}
+		encodedURL, err := urlutil.Encode(rec.URL)
+		if err != nil {
+			return nil, fmt.Errorf("item %d: encode URL: %w", num, err)
+		}
+		encodedURLs[i] = encodedURL
+	}
+
+	if len(records) > 0 {
+		fmt.Fprintf(logger, "Fetching Content-Length for %d episodes...\n\n", len(records))
+	}
+	lengths, err := fetchContentLengths(records, encodedURLs, fetcher, opts.Concurrency)
+	if err != nil {
+		return nil, err
+	}
+
 	items := make([]rssItem, 0, len(records))
 	for i, rec := range records {
 		num := i + 1
 		fmt.Fprintf(logger, "Title: %q\nDate: %q\nLink: %q\n", rec.Title, rec.Date, rec.URL)
 
-		// Validate date
-		if err := dateutil.ValidateRFC2822(rec.Date); err != nil {
-			return nil, fmt.Errorf("item %d (%q): %w", num, rec.Title, err)
-		}
-
-		// Encode URL
-		encodedURL, err := urlutil.Encode(rec.URL)
-		if err != nil {
-			return nil, fmt.Errorf("item %d: encode URL: %w", num, err)
-		}
+		encodedURL := encodedURLs[i]
 		if encodedURL != rec.URL {
 			fmt.Fprintf(logger, "URL encoded URL: %s\n", encodedURL)
 		}
 
-		// Fetch content-length
-		length, err := fetcher(encodedURL)
-		if err != nil {
-			return nil, fmt.Errorf("item %d (%q): resolve URL %q for content-length: %w", num, rec.Title, encodedURL, err)
-		}
+		length := lengths[i]
 		if strings.TrimSpace(length) == "" {
 			return nil, fmt.Errorf("item %d (%q): resolve URL %q for content-length: empty Content-Length", num, rec.Title, encodedURL)
 		}
@@ -260,9 +284,47 @@ func Build(opts FeedOptions, records []feedcsv.Record, logger io.Writer) ([]byte
 	return buf.Bytes(), nil
 }
 
+// fetchContentLengths looks up every episode's Content-Length, up to
+// concurrency at a time, and returns them in record order. Once a lookup fails
+// no new ones start, and the error returned is the first record's that failed.
+func fetchContentLengths(records []feedcsv.Record, urls []string, fetcher func(string) (string, error), concurrency int) ([]string, error) {
+	if concurrency <= 0 {
+		concurrency = DefaultConcurrency
+	}
+	lengths := make([]string, len(urls))
+	errs := make([]error, len(urls))
+	var failed atomic.Bool
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, concurrency)
+	for i, u := range urls {
+		sem <- struct{}{}
+		if failed.Load() {
+			<-sem
+			break
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			defer func() { <-sem }()
+			lengths[i], errs[i] = fetcher(u)
+			if errs[i] != nil {
+				failed.Store(true)
+			}
+		}()
+	}
+	wg.Wait()
+
+	for i, err := range errs {
+		if err != nil {
+			return nil, fmt.Errorf("item %d (%q): resolve URL %q for content-length: %w", i+1, records[i].Title, urls[i], err)
+		}
+	}
+	return lengths, nil
+}
+
 // fetchContentLength performs a HEAD request and returns the Content-Length value.
 func fetchContentLength(rawURL string) (string, error) {
-	resp, err := http.Head(rawURL) //nolint:noctx
+	resp, err := httpClient.Head(rawURL) //nolint:noctx
 	if err != nil {
 		return "", err
 	}

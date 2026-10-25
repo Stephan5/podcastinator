@@ -216,7 +216,7 @@ Give the role an inline policy that can only touch the feed files and the index,
 | Set up    | `init [--bucket b --public-url u]`           | Creates `feed/` and `hosting.json`                                    |
 | Import    | `import <url\|file> [--slug s] [--force]`    | Creates a feed from an existing podcast's RSS feed                    |
 |           | `update [feed...]`                           | Adds new episodes from each feed's `source`                           |
-| Generate  | `build [feed...] [--exclude a,b]`            | Builds `feed.xml` from `feed.csv` and `feed.json`                     |
+| Generate  | `build [feed...] [--exclude a,b] [--concurrency n]` | Builds `feed.xml` from `feed.csv` and `feed.json`                     |
 |           | `dates <feed> --from <format>`               | Rewrites a hand-written CSV's dates as RFC 2822                       |
 | Self-host | `audio upload <feed>`                        | Copies a feed's episodes into the bucket and points its CSV at them   |
 |           | `audio prune <feed> [--delete]`              | Finds audio in the bucket the CSV no longer points at                 |
@@ -252,7 +252,7 @@ podcastinator build example-show another-show     # just these
 podcastinator build --exclude some-feed,another   # all but these
 ```
 
-Writes `feed/<slug>/feed.xml` from its `feed.csv` and `feed.json`. The feed and image URLs come from `feed` and `image` in `feed.json`, then their location in the bucket from `hosting.json`, and it fails if neither supplies them. Gives any episode without a GUID one, writing it to the CSV. Sends a `HEAD` request for each episode to fill in its length. Skips writing if the feed hasn't changed. Each `feed.xml` ends with a comment holding a hash of its inputs, which `publish` and `status` check.
+Writes `feed/<slug>/feed.xml` from its `feed.csv` and `feed.json`. The feed and image URLs come from `feed` and `image` in `feed.json`, then their location in the bucket from `hosting.json`, and it fails if neither supplies them. Gives any episode without a GUID one, writing it to the CSV. Sends a `HEAD` request for each episode to fill in its length, 16 at a time by default; `--concurrency` changes that. Skips writing if the feed hasn't changed. Each `feed.xml` ends with a comment holding a hash of its inputs, which `publish` and `status` check.
 
 ### `dates` — reformat dates
 

@@ -4,6 +4,10 @@ Newest first. A release's description on GitHub is its section here.
 
 ## Unreleased
 
+### Changed
+
+* `build` looks up episode lengths 16 at a time instead of one by one, which makes it about ten times faster on a large feed. `--concurrency` changes how many; lower it if a host rate-limits you. Each lookup now times out after 30 seconds, where an unresponsive host used to hang the build.
+
 ### Fixed
 
 * `import` and `update` skip items without an `<enclosure>`, such as text posts and trailers. They used to take the item's `<link>` as its audio, which is usually the episode's web page, so `build` published an enclosure pointing at HTML.

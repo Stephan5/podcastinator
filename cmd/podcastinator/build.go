@@ -12,6 +12,7 @@ import (
 
 func newBuildCmd() *cobra.Command {
 	var exclude []string
+	var concurrency int
 
 	cmd := &cobra.Command{
 		Use:     "build [feed...]",
@@ -30,7 +31,8 @@ to the feed's location in the bucket from hosting.json. One of them has to
 supply both.
 
 Sends a HEAD request for every episode to fill in its length, so the audio has
-to be reachable. Leaves feed.xml alone if nothing in it has changed.
+to be reachable. --concurrency sets how many run at once; lower it if a host
+rate-limits you. Leaves feed.xml alone if nothing in it has changed.
 
 feed.xml is stamped with a hash of feed.csv, feed.json and hosting.json, so
 publish can refuse a feed that wasn't rebuilt after they changed.
@@ -38,8 +40,12 @@ publish can refuse a feed that wasn't rebuilt after they changed.
 Examples:
   podcastinator build
   podcastinator build example-show
-  podcastinator build --exclude some-feed,another-feed`,
+  podcastinator build --exclude some-feed,another-feed
+  podcastinator build --concurrency 4`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if concurrency < 1 {
+				return fmt.Errorf("--concurrency must be at least 1, got %d", concurrency)
+			}
 			feedDirAbs, err := resolveFeedDir()
 			if err != nil {
 				return err
@@ -57,7 +63,7 @@ Examples:
 					continue
 				}
 				printHeading("Building: " + f.slug)
-				if err := buildFeed(feedDirAbs, f); err != nil {
+				if err := buildFeed(feedDirAbs, f, concurrency); err != nil {
 					return fmt.Errorf("feed %q: %w", f.slug, err)
 				}
 				fmt.Println()
@@ -67,11 +73,12 @@ Examples:
 	}
 
 	cmd.Flags().StringSliceVar(&exclude, "exclude", nil, "Feeds to skip when building every feed")
+	cmd.Flags().IntVar(&concurrency, "concurrency", feedrss.DefaultConcurrency, "HEAD requests to make at once")
 	return cmd
 }
 
 // buildFeed writes f's feed.xml.
-func buildFeed(feedDirAbs string, f feed) error {
+func buildFeed(feedDirAbs string, f feed, concurrency int) error {
 	feedURL, imageURL := f.cfg.FeedURL, f.cfg.ImageURL
 
 	// Self-hosted feeds default to their URLs in the bucket.
@@ -109,6 +116,7 @@ func buildFeed(feedDirAbs string, f feed) error {
 		FeedURL:     feedURL,
 		RepoDir:     f.slug,
 		InputsHash:  hash,
+		Concurrency: concurrency,
 	}
 	opts.SetDefaults()
 
