@@ -76,6 +76,25 @@ tidy:
 clean:
 	rm -rf $(BUILD_DIR)
 
+# ── Release ────────────────────────────────────────────────────────────────────
+
+VERSION := $(shell sed -n 's/^const version = "\(.*\)"$$/\1/p' cmd/podcastinator/version.go)
+
+# Tags master with the version in version.go and pushes the tag, which runs the
+# release workflow. It first checks what the workflow would refuse, so a bad tag
+# never reaches GitHub.
+.PHONY: release
+release:
+	@test -n "$(VERSION)" || { echo "No version in cmd/podcastinator/version.go" >&2; exit 1; }
+	@test -z "$$(git status --porcelain)" || { echo "Commit or stash your changes first" >&2; exit 1; }
+	@test "$$(git rev-parse --abbrev-ref HEAD)" = master || { echo "Release from master" >&2; exit 1; }
+	@git fetch -q origin master --tags
+	@test "$$(git rev-parse HEAD)" = "$$(git rev-parse origin/master)" || { echo "master doesn't match origin/master; pull or push first" >&2; exit 1; }
+	@! git rev-parse -q --verify "refs/tags/v$(VERSION)" >/dev/null || { echo "v$(VERSION) is already tagged; bump the version in cmd/podcastinator/version.go" >&2; exit 1; }
+	@grep -qxF '## $(VERSION)' RELEASE_NOTES.md || { echo "RELEASE_NOTES.md has no '## $(VERSION)' section" >&2; exit 1; }
+	git tag v$(VERSION)
+	git push origin v$(VERSION)
+
 # ── Help ───────────────────────────────────────────────────────────────────────
 
 .PHONY: help
@@ -99,6 +118,9 @@ help:
 	@echo "  fmt                Run go fmt"
 	@echo "  vet                Run go vet"
 	@echo "  lint               Run fmt + vet"
+	@echo ""
+	@echo "Release:"
+	@echo "  release            Tag master with the version in version.go and push the tag"
 	@echo ""
 	@echo "Other:"
 	@echo "  tidy               Run go mod tidy"
