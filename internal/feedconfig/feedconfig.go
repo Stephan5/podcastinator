@@ -2,6 +2,7 @@
 package feedconfig
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -13,7 +14,7 @@ import (
 const Filename = "feed.json"
 
 // Config holds the podcast-level metadata for a feed directory.
-// Fields map directly to csv2rss flags; omitted fields use their defaults.
+// Omitted fields use their defaults.
 type Config struct {
 	Title       string `json:"title"`
 	Description string `json:"description,omitempty"`
@@ -24,6 +25,9 @@ type Config struct {
 	WebsiteURL string `json:"website,omitempty"`
 	ImageURL   string `json:"image,omitempty"`
 	FeedURL    string `json:"feed,omitempty"`
+	// Source is the RSS feed the episodes were imported from, which update
+	// re-fetches for new episodes.
+	Source string `json:"source,omitempty"`
 }
 
 // DelimiterRune returns the configured delimiter as a rune,
@@ -58,10 +62,12 @@ func Load(dir string) (*Config, error) {
 
 // Save writes cfg to feed.json in dir.
 func Save(dir string, cfg *Config) error {
-	data, err := json.MarshalIndent(cfg, "", "  ")
-	if err != nil {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetIndent("", "  ")
+	enc.SetEscapeHTML(false) // titles like "Bill & Ben" stay readable
+	if err := enc.Encode(cfg); err != nil {
 		return err
 	}
-	data = append(data, '\n')
-	return os.WriteFile(filepath.Join(dir, Filename), data, 0644)
+	return os.WriteFile(filepath.Join(dir, Filename), buf.Bytes(), 0644)
 }

@@ -3,6 +3,7 @@ package feedconfig_test
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/Stephan5/podcastinator/internal/feedconfig"
@@ -68,10 +69,17 @@ func TestSaveAndLoad(t *testing.T) {
 		Title:       "Two Friends' Secret Podcast",
 		Description: "Grab onto this fast moving train",
 		Author:      "Jane Doe & John Smith",
+		Source:      "https://example.com/feed.rss?a=1&b=2",
 	}
 
 	if err := feedconfig.Save(dir, cfg); err != nil {
 		t.Fatalf("Save: %v", err)
+	}
+
+	// Written for people to read and edit, so & isn't escaped to \u0026.
+	data, _ := os.ReadFile(filepath.Join(dir, feedconfig.Filename))
+	if !strings.Contains(string(data), `"author": "Jane Doe & John Smith"`) {
+		t.Errorf("feed.json:\n%s", data)
 	}
 
 	loaded, err := feedconfig.Load(dir)
@@ -83,6 +91,9 @@ func TestSaveAndLoad(t *testing.T) {
 	}
 	if loaded.Author != cfg.Author {
 		t.Errorf("Author = %q; want %q", loaded.Author, cfg.Author)
+	}
+	if loaded.Source != cfg.Source {
+		t.Errorf("Source = %q; want %q", loaded.Source, cfg.Source)
 	}
 }
 

@@ -768,3 +768,64 @@ func assertContains(t *testing.T, s, sub string) {
 		t.Errorf("expected output to contain:\n  %q\nbut it was not found", sub)
 	}
 }
+
+func TestParseItunesMetadata(t *testing.T) {
+	const src = `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Show</title>
+    <link>https://example.com/show</link>
+    <atom:link href="https://feeds.example.com/show.rss" rel="self" type="application/rss+xml"/>
+    <itunes:author>Some Body</itunes:author>
+    <image><url>https://example.com/small.jpg</url></image>
+    <itunes:image href="https://example.com/large.jpg"/>
+  </channel>
+</rss>`
+
+	feed, err := feedrss.Parse(strings.NewReader(src))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if feed.Author != "Some Body" {
+		t.Errorf("Author = %q", feed.Author)
+	}
+	// atom:link comes after <link>, and must not replace it.
+	if feed.Link != "https://example.com/show" {
+		t.Errorf("Link = %q", feed.Link)
+	}
+	// itunes:image is the full-size artwork, so it wins over <image>.
+	if feed.ImageURL != "https://example.com/large.jpg" {
+		t.Errorf("ImageURL = %q", feed.ImageURL)
+	}
+}
+
+func TestStampedInputs(t *testing.T) {
+	opts := feedrss.FeedOptions{
+		Title:                "Test",
+		FeedURL:              "https://podcasts.example.com/test/feed.xml",
+		ImageURL:             "https://podcasts.example.com/test/image.jpg",
+		ContentLengthFetcher: mockFetcher("0"),
+	}
+	unstamped, err := feedrss.Build(opts, testRecords, io.Discard)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	if got := feedrss.StampedInputs(unstamped); got != "" {
+		t.Errorf("StampedInputs of an unstamped feed = %q; want empty", got)
+	}
+
+	opts.InputsHash = "0123abcd"
+	stamped, err := feedrss.Build(opts, testRecords, io.Discard)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	if got := feedrss.StampedInputs(stamped); got != "0123abcd" {
+		t.Errorf("StampedInputs = %q; want %q", got, "0123abcd")
+	}
+	if err := xml.Unmarshal(stamped, new(struct{})); err != nil {
+		t.Errorf("stamped feed isn't valid XML: %v", err)
+	}
+	if feedrss.HashContent(stamped) == feedrss.HashContent(unstamped) {
+		t.Error("the stamp should count as a change, so build rewrites feed.xml when only its inputs changed")
+	}
+}
