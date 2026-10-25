@@ -336,7 +336,6 @@ type rssDocItem struct {
 	Title       string       `xml:"title"`
 	Description string       `xml:"description"`
 	PubDate     string       `xml:"pubDate"`
-	Link        string       `xml:"link"`
 	GUID        string       `xml:"guid"`
 	Enclosure   rssEnclosure `xml:"enclosure"`
 }
@@ -405,12 +404,10 @@ func Parse(r io.Reader) (*ParsedFeed, error) {
 			return nil, fmt.Errorf("item %q: %w", item.Title, err)
 		}
 
-		encURL := item.Enclosure.URL
-		if encURL == "" {
-			encURL = item.Link
-		}
-		// HTML decode the URL
-		decodedURL := urlutil.HTMLUnescape(encURL)
+		// Only the enclosure is audio. An item's <link> is usually the
+		// episode's web page, so an item without an enclosure gets no URL,
+		// and import skips it.
+		decodedURL := urlutil.HTMLUnescape(item.Enclosure.URL)
 
 		items = append(items, itemWithTime{
 			rec: feedcsv.Record{

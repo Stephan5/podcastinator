@@ -511,8 +511,10 @@ func TestImportFixture(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("import exited %d:\n%s", code, out)
 	}
-	if !strings.Contains(out, `Warning: skipping "A note about our schedule", which has no audio URL`) {
-		t.Errorf("expected the item without audio to be reported as skipped:\n%s", out)
+	for _, title := range []string{"A note about our schedule", "Trailer"} {
+		if !strings.Contains(out, fmt.Sprintf("Warning: skipping %q, which has no audio URL", title)) {
+			t.Errorf("expected %q, which has no enclosure, to be reported as skipped:\n%s", title, out)
+		}
 	}
 
 	// The slug comes from the title.

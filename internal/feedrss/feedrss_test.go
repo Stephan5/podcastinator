@@ -470,6 +470,42 @@ func TestParseURLHTMLDecoded(t *testing.T) {
 	}
 }
 
+func TestParseIgnoresItemLink(t *testing.T) {
+	const src = `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Test</title>
+    <item>
+      <title>Episode</title>
+      <link>https://example.com/episodes/1</link>
+      <pubDate>Sat, 29 Jun 2002 03:00:00 GMT</pubDate>
+      <enclosure url="https://example.com/1.mp3" length="100" type="audio/mpeg"/>
+    </item>
+    <item>
+      <title>Trailer</title>
+      <link>https://example.com/trailer</link>
+      <pubDate>Sun, 30 Jun 2002 03:00:00 GMT</pubDate>
+    </item>
+  </channel>
+</rss>`
+
+	feed, err := feedrss.Parse(strings.NewReader(src))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if len(feed.Records) != 2 {
+		t.Fatalf("expected 2 records, got %d", len(feed.Records))
+	}
+	// The enclosure is the audio, not the link to the episode's page.
+	if got, want := feed.Records[0].URL, "https://example.com/1.mp3"; got != want {
+		t.Errorf("URL = %q; want %q", got, want)
+	}
+	// With no enclosure there's no audio, whatever the link is.
+	if got := feed.Records[1].URL; got != "" {
+		t.Errorf("URL of an item without an enclosure = %q; want empty", got)
+	}
+}
+
 // --- CSV round-trip: Build → write CSV → read CSV ---
 
 func TestBuildThenWriteCSVRoundTrip(t *testing.T) {

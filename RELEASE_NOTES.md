@@ -2,6 +2,12 @@
 
 Newest first. A release's description on GitHub is its section here.
 
+## Unreleased
+
+### Fixed
+
+* `import` and `update` skip items without an `<enclosure>`, such as text posts and trailers. They used to take the item's `<link>` as its audio, which is usually the episode's web page, so `build` published an enclosure pointing at HTML.
+
 ## 0.4.0
 
 The commands are reorganised around the three jobs: importing a feed, building it and hosting it. Every command that acts on feeds names them by slug (`build example-show`, not a path to its CSV), and every one that can act on all of them does when none are named.

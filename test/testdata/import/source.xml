@@ -41,6 +41,15 @@
       <guid isPermaLink="false">host-guid-note</guid>
     </item>
 
+    <!-- A link to the episode's web page but no enclosure: still nothing to play. -->
+    <item>
+      <title>Trailer</title>
+      <description>Watch the trailer on our site.</description>
+      <link>https://example.com/bill-and-ben/trailer</link>
+      <pubDate>Tue, 02 Jan 2024 10:00:00 GMT</pubDate>
+      <guid isPermaLink="false">host-guid-trailer</guid>
+    </item>
+
     <item>
       <title>Episode 2: Pots</title>
       <!-- Entity-escaped HTML rather than CDATA. -->
