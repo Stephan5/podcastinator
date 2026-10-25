@@ -88,7 +88,7 @@ func buildTestFeed(t *testing.T) ([]byte, feedrss.FeedOptions) {
 
 func TestBuildProducesValidXML(t *testing.T) {
 	xmlBytes, _ := buildTestFeed(t)
-	var v interface{}
+	var v any
 	if err := xml.Unmarshal(xmlBytes, &v); err != nil {
 		t.Errorf("XML unmarshal error: %v", err)
 	}
@@ -857,7 +857,7 @@ func TestNamespaceOnOneLine(t *testing.T) {
 		t.Fatalf("Build: %v", err)
 	}
 
-	for _, line := range strings.Split(string(xmlBytes), "\n") {
+	for line := range strings.SplitSeq(string(xmlBytes), "\n") {
 		if strings.HasPrefix(strings.TrimSpace(line), "xmlns:") {
 			t.Errorf("namespace found on its own line (should be inline on <rss>): %q", line)
 		}
@@ -882,7 +882,7 @@ func TestImageChildIndentation(t *testing.T) {
 		t.Fatalf("Build: %v", err)
 	}
 
-	for _, line := range strings.Split(string(xmlBytes), "\n") {
+	for line := range strings.SplitSeq(string(xmlBytes), "\n") {
 		trimmed := strings.TrimLeft(line, " ")
 		if strings.HasPrefix(trimmed, "<url>") || strings.HasPrefix(trimmed, "<title>") || strings.HasPrefix(trimmed, "<link>") {
 			// Only check lines inside <image> (identified by being indented)
@@ -899,7 +899,7 @@ func TestImageChildIndentation(t *testing.T) {
 // extractTitles is a debug helper that pulls all <title>...</title> lines from XML.
 func extractTitles(src string) string {
 	var out strings.Builder
-	for _, line := range strings.Split(src, "\n") {
+	for line := range strings.SplitSeq(src, "\n") {
 		if strings.Contains(line, "<title>") {
 			out.WriteString(strings.TrimSpace(line) + "\n")
 		}

@@ -55,11 +55,11 @@ func HTMLUnescape(s string) string {
 
 // StripQuery removes the query string from a URL.
 func StripQuery(rawURL string) string {
-	idx := strings.IndexByte(rawURL, '?')
-	if idx == -1 {
+	before, _, ok := strings.Cut(rawURL, "?")
+	if !ok {
 		return rawURL
 	}
-	return rawURL[:idx]
+	return before
 }
 
 // ConvertHTTPToS3 converts an S3 HTTPS URL to an s3:// URI.
@@ -68,11 +68,10 @@ func ConvertHTTPToS3(rawURL string) string {
 	clean := StripQuery(rawURL)
 	// Match https://s3*.amazonaws.com/<bucket>/...
 	const awsPrefix = "amazonaws.com/"
-	idx := strings.Index(clean, awsPrefix)
-	if idx == -1 {
+	_, rest, ok := strings.Cut(clean, awsPrefix)
+	if !ok {
 		return clean
 	}
-	rest := clean[idx+len(awsPrefix):]
 	return "s3://" + rest
 }
 
