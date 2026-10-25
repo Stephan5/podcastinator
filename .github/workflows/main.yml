@@ -13,7 +13,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
 
       - name: Set up dependencies
         run: |
@@ -26,7 +31,7 @@ jobs:
         run: |
           docker run -d --name seaweedfs -p 8333:8333 \
             -e AWS_ACCESS_KEY_ID=test -e AWS_SECRET_ACCESS_KEY=test \
-            chrislusf/seaweedfs:4.48 server -s3 -master.telemetry=false
+            chrislusf/seaweedfs:4.50 server -s3 -master.telemetry=false
 
       # Retried while SeaweedFS finishes starting up.
       - name: Create test S3 bucket

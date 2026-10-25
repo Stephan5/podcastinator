@@ -137,15 +137,15 @@ jobs:
       id-token: write
       contents: read
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
         with:
           go-version: stable
-      - uses: aws-actions/configure-aws-credentials@v4
+      - uses: aws-actions/configure-aws-credentials@v5
         with:
           role-to-assume: ${{ vars.PUBLISH_ROLE_ARN }}
           aws-region: eu-west-2
-      - run: go install github.com/Stephan5/podcastinator/cmd/podcastinator@v0.6.0
+      - run: go install github.com/Stephan5/podcastinator/cmd/podcastinator@v0.7.0
       - run: podcastinator publish
 ```
 
