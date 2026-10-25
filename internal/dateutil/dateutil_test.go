@@ -13,7 +13,7 @@ func TestValidateRFC2822(t *testing.T) {
 		"Mon, 01 Jul 2002 20:33:05 GMT",
 		"Tue, 15 Nov 2016 03:00:00 GMT",
 		"Thu, 04 Jul 2002 03:00:00 GMT",
-		// Full month names as used in the bash test CSV inputs
+		// Full month names, which some feeds use
 		"Sun, 30 June 2002 19:07:00 +0100",
 		"Mon, 01 July 2002 20:33:05 GMT",
 		"Wed, 03 July 2002 18:50:00 GMT",
@@ -66,12 +66,9 @@ func TestReformatDate(t *testing.T) {
 		format      string
 		wantContain string // substring that must appear in the result
 	}{
-		// From pubdate bash test: "Jun 1, 2023" → "Thu, 01 Jun 2023 03:00:00 GMT"
 		{"Jun 1, 2023", "%b %d, %Y", "01 Jun 2023 03:00:00 GMT"},
 		{"Jul 2, 2023", "%b %d, %Y", "02 Jul 2023 03:00:00 GMT"},
-		// Period-normalisation: "Jul. 3, 2023" → same as "Jul 3, 2023"
 		{"Jul. 3, 2023", "%b %d, %Y", "03 Jul 2023 03:00:00 GMT"},
-		// Four-digit year formats
 		{"2023 06 01", "%Y %m %d", "01 Jun 2023 03:00:00 GMT"},
 	}
 

@@ -1,4 +1,4 @@
-// Package feedrss handles building and parsing podcast RSS XML feeds.
+// Package feedrss builds podcast RSS feeds and parses them for import.
 package feedrss
 
 import (
@@ -39,7 +39,7 @@ const DefaultConcurrency = 16
 // from hanging a build.
 var httpClient = &http.Client{Timeout: 30 * time.Second}
 
-// FeedOptions contains podcast-level metadata for building an RSS feed.
+// FeedOptions is everything about a feed but its episodes.
 type FeedOptions struct {
 	Title       string
 	Description string
@@ -47,7 +47,6 @@ type FeedOptions struct {
 	WebsiteURL  string
 	ImageURL    string
 	FeedURL     string
-	RepoDir     string // subdirectory name under feed/
 
 	// Type is the show's itunes:type, "episodic" or "serial"; empty leaves
 	// it out, which apps treat as episodic.
@@ -57,9 +56,8 @@ type FeedOptions struct {
 	// publish can tell whether feed.xml is up to date with its inputs.
 	InputsHash string
 
-	// ContentLengthFetcher is called to retrieve the Content-Length for each episode
-	// URL. If nil, an HTTP HEAD request is used. Override in tests.
-	// It's called concurrently, so it must be safe for that.
+	// ContentLengthFetcher returns an episode's length in bytes, by a HEAD
+	// request if nil. It's called concurrently.
 	ContentLengthFetcher func(url string) (string, error)
 
 	// Concurrency is how many Content-Length lookups run at once. Zero or
@@ -76,11 +74,9 @@ func (o *FeedOptions) SetDefaults() {
 	}
 }
 
-// xmlEscapeText escapes only the characters required in XML text nodes: &, <, >.
-// It intentionally does NOT escape ' or " (only needed in attribute values),
-// matching the bash/xmllint output. It also HTML-decodes the input first so that
-// values already stored as HTML entities in the CSV (e.g. "&amp;" in a title)
-// are not double-encoded into "&amp;amp;".
+// xmlEscapeText escapes &, < and > for an XML text node, leaving quotes, which
+// only need escaping in attributes. It unescapes s first, as titles in the CSV
+// can hold entities such as &amp;, which would otherwise come out as &amp;amp;.
 func xmlEscapeText(s string) string {
 	s = html.UnescapeString(s)
 	var buf strings.Builder
@@ -99,8 +95,7 @@ func xmlEscapeText(s string) string {
 	return buf.String()
 }
 
-// xmlEscapeAttr escapes characters required in XML attribute values using the
-// standard library (escapes &, <, >, ", '). Used for href/url attributes.
+// xmlEscapeAttr escapes s for an XML attribute value, quotes included.
 func xmlEscapeAttr(s string) string {
 	var buf bytes.Buffer
 	xml.EscapeText(&buf, []byte(s)) //nolint:errcheck
@@ -180,8 +175,7 @@ type rssItem struct {
 	MimeType    string
 }
 
-// Build generates RSS XML bytes from the given options and CSV records.
-// It fetches Content-Length headers for each episode URL.
+// Build renders the feed, sending a HEAD request for each episode's length.
 func Build(opts FeedOptions, records []feedcsv.Record, logger io.Writer) ([]byte, error) {
 	if logger == nil {
 		logger = io.Discard
@@ -192,7 +186,6 @@ func Build(opts FeedOptions, records []feedcsv.Record, logger io.Writer) ([]byte
 
 	buildDate := time.Now().UTC().Format("Mon, 02 Jan 2006 15:04:05 GMT")
 
-	// Use injected fetcher or fall back to real HTTP HEAD.
 	fetcher := opts.ContentLengthFetcher
 	if fetcher == nil {
 		fetcher = fetchContentLength
@@ -227,20 +220,18 @@ func Build(opts FeedOptions, records []feedcsv.Record, logger io.Writer) ([]byte
 
 		encodedURL := encodedURLs[i]
 		if encodedURL != rec.URL {
-			fmt.Fprintf(logger, "URL encoded URL: %s\n", encodedURL)
+			fmt.Fprintf(logger, "Encoded URL: %s\n", encodedURL)
 		}
 
 		length := lengths[i]
 		if strings.TrimSpace(length) == "" {
 			return nil, fmt.Errorf("item %d (%q): resolve URL %q for content-length: empty Content-Length", num, rec.Title, encodedURL)
 		}
-		fmt.Fprintf(logger, "Content-Length fetched: %q\n", length)
+		fmt.Fprintf(logger, "Length: %q\n", length)
 
-		// HTML encode URL for use in XML
 		htmlURL := urlutil.HTMLEscape(encodedURL)
-		fmt.Fprintf(logger, "HTML encoded URL: %s\n", htmlURL)
+		fmt.Fprintf(logger, "Escaped URL: %s\n", htmlURL)
 
-		// Detect MIME type
 		cleanURL := urlutil.StripQuery(encodedURL)
 		ext := ""
 		if dotIdx := strings.LastIndex(cleanURL, "."); dotIdx != -1 {
@@ -336,7 +327,7 @@ func fetchContentLengths(records []feedcsv.Record, urls []string, fetcher func(s
 	return lengths, nil
 }
 
-// fetchContentLength performs a HEAD request and returns the Content-Length value.
+// fetchContentLength returns rawURL's Content-Length, from a HEAD request.
 func fetchContentLength(rawURL string) (string, error) {
 	resp, err := httpClient.Head(rawURL) //nolint:noctx
 	if err != nil {
@@ -346,11 +337,11 @@ func fetchContentLength(rawURL string) (string, error) {
 	if resp.StatusCode >= 400 {
 		return "", fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
-	cl := resp.Header.Get("Content-Length")
-	return strings.TrimSpace(cl), nil
+	return strings.TrimSpace(resp.Header.Get("Content-Length")), nil
 }
 
-// HashContent computes SHA-256 of the RSS XML bytes, excluding lastBuildDate and pubDate lines.
+// HashContent hashes a feed, ignoring the lastBuildDate and pubDate that
+// change on every build.
 func HashContent(xmlBytes []byte) string {
 	h := sha256.New()
 	for line := range strings.SplitSeq(string(xmlBytes), "\n") {
@@ -375,8 +366,6 @@ func StampedInputs(xmlBytes []byte) string {
 	}
 	return string(m[1])
 }
-
-// --- RSS Parsing (for import) ---
 
 const itunesNS = "http://www.itunes.com/dtds/podcast-1.0.dtd"
 
@@ -422,7 +411,7 @@ type rssEnclosure struct {
 	Type   string `xml:"type,attr"`
 }
 
-// ParsedFeed contains the parsed RSS feed data.
+// ParsedFeed is a show and its episodes, read from its RSS feed.
 type ParsedFeed struct {
 	Title       string
 	Description string
@@ -432,7 +421,7 @@ type ParsedFeed struct {
 	Records     []feedcsv.Record
 }
 
-// Parse parses an RSS XML feed and returns records sorted by pubDate ascending.
+// Parse reads an RSS feed, returning its episodes oldest first.
 func Parse(r io.Reader) (*ParsedFeed, error) {
 	data, err := io.ReadAll(r)
 	if err != nil {
@@ -497,7 +486,6 @@ func Parse(r io.Reader) (*ParsedFeed, error) {
 		})
 	}
 
-	// Sort by date ascending
 	sort.Slice(items, func(i, j int) bool {
 		return items[i].t.Before(items[j].t)
 	})

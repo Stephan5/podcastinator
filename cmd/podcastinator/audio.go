@@ -86,8 +86,8 @@ func runAudioUpload(ctx context.Context, f feed, host *hosting.Config) error {
 	fmt.Printf("Feed:          %q\n", f.slug)
 	fmt.Printf("Bucket:        %q\n", bucket)
 	fmt.Printf("Region:        %q\n", region)
-	fmt.Printf("Key Root:      %q\n", keyRoot)
-	fmt.Printf("Item Count:    %d (requires %d digits of padding)\n\n", itemCount, paddingWidth)
+	fmt.Printf("Key root:      %q\n", keyRoot)
+	fmt.Printf("Episodes:      %d\n\n", itemCount)
 
 	s3Client, err := s3util.New(ctx, region)
 	if err != nil {
@@ -100,7 +100,6 @@ func runAudioUpload(ctx context.Context, f feed, host *hosting.Config) error {
 		paddedNum := fmt.Sprintf("%0*d", paddingWidth, num)
 		srcURL := rec.URL
 
-		// Strip query and get filename/extension
 		cleanURL := urlutil.StripQuery(srcURL)
 		filename := filepath.Base(cleanURL)
 
@@ -109,7 +108,6 @@ func runAudioUpload(ctx context.Context, f feed, host *hosting.Config) error {
 			return fmt.Errorf("item %d (%q): unsupported extension %q in %q", num, rec.Title, ext, filename)
 		}
 
-		// Build destination filename
 		slug := urlutil.Slugify(fmt.Sprintf("%s-%s", paddedNum, rec.Title))
 		dstFilename := slug + ext
 		dstKey := keyRoot + dstFilename
@@ -122,7 +120,6 @@ func runAudioUpload(ctx context.Context, f feed, host *hosting.Config) error {
 		fmt.Printf("  Dst S3:  %q\n", s3DstURL)
 		fmt.Printf("  File:    %q\n", dstFilename)
 
-		// Encode src URL
 		encodedSrc, _ := urlutil.Encode(srcURL)
 
 		var newURL string
@@ -142,7 +139,7 @@ func runAudioUpload(ctx context.Context, f feed, host *hosting.Config) error {
 			newURL = httpDstURL
 
 		case inBucket:
-			fmt.Printf("  → Already in bucket, moving to new location\n")
+			fmt.Println("  → Already in bucket, moving to new location")
 			if err := s3util.ValidateURL(encodedSrc); err != nil {
 				return fmt.Errorf("validate src URL %s: %w", encodedSrc, err)
 			}
@@ -157,7 +154,7 @@ func runAudioUpload(ctx context.Context, f feed, host *hosting.Config) error {
 			}
 
 		case isHTTPURL(srcURL):
-			fmt.Printf("  → Remote URL, downloading and uploading to S3\n")
+			fmt.Println("  → Remote URL, downloading and uploading to S3")
 			if err := s3util.ValidateURL(encodedSrc); err != nil {
 				return fmt.Errorf("validate src URL %s: %w", encodedSrc, err)
 			}
@@ -170,7 +167,7 @@ func runAudioUpload(ctx context.Context, f feed, host *hosting.Config) error {
 			newURL = httpDstURL
 
 		case strings.HasPrefix(srcURL, "file://"):
-			fmt.Printf("  → Local file URL, uploading to S3\n")
+			fmt.Println("  → Local file URL, uploading to S3")
 			localPath := strings.TrimPrefix(srcURL, "file://")
 			if !filepath.IsAbs(localPath) {
 				localPath = filepath.Join(f.dir, localPath)
@@ -196,7 +193,6 @@ func runAudioUpload(ctx context.Context, f feed, host *hosting.Config) error {
 		return fmt.Errorf("write updated CSV: %w", err)
 	}
 
-	// Warn about any non-self-hosted URLs remaining
 	for _, rec := range updated {
 		if isHTTPURL(rec.URL) && !strings.HasPrefix(rec.URL, baseHTTPDst) {
 			fmt.Printf("Warning: not fully self-hosted: %q\n", rec.URL)
@@ -262,7 +258,7 @@ func runAudioPrune(ctx context.Context, f feed, host *hosting.Config, del, failO
 
 	fmt.Printf("Feed:        %q\n", f.slug)
 	fmt.Printf("Bucket:      %q\n", bucket)
-	fmt.Printf("Key Root:    %q\n", keyRoot)
+	fmt.Printf("Key root:    %q\n", keyRoot)
 	fmt.Printf("Delete:      %v\n\n", del)
 
 	records, err := f.records()
@@ -372,8 +368,8 @@ func runAudioDownload(f feed, outputDir string) error {
 	}
 
 	fmt.Printf("Feed:        %q\n", f.slug)
-	fmt.Printf("Output Dir:  %q\n", dstDir)
-	fmt.Printf("Media Dir:   %q\n\n", mediaDir)
+	fmt.Printf("Output dir:  %q\n", dstDir)
+	fmt.Printf("Media dir:   %q\n\n", mediaDir)
 
 	records, err := f.records()
 	if err != nil {

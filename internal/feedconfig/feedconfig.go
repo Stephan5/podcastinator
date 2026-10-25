@@ -1,4 +1,4 @@
-// Package feedconfig handles per-feed configuration loaded from feed.json.
+// Package feedconfig reads and writes a feed's feed.json.
 package feedconfig
 
 import (
@@ -13,14 +13,13 @@ import (
 
 const Filename = "feed.json"
 
-// Config holds the podcast-level metadata for a feed directory.
-// Omitted fields use their defaults.
+// Config is a feed's feed.json.
 type Config struct {
 	Title       string `json:"title"`
 	Description string `json:"description,omitempty"`
 	Author      string `json:"author,omitempty"`
-	// Delimiter is a single character. Defaults to \x1F if empty.
-	// Use the JSON unicode escape \u001f to represent the unit separator.
+	// Delimiter is the CSV's field separator, a single character. Empty
+	// means the unit separator, \u001f in JSON.
 	Delimiter  string `json:"delimiter,omitempty"`
 	WebsiteURL string `json:"website,omitempty"`
 	ImageURL   string `json:"image,omitempty"`
@@ -33,8 +32,7 @@ type Config struct {
 	Type string `json:"type,omitempty"`
 }
 
-// DelimiterRune returns the configured delimiter as a rune,
-// falling back to feedcsv.DefaultDelimiter if not set.
+// DelimiterRune returns the delimiter, or feedcsv.DefaultDelimiter if unset.
 func (c *Config) DelimiterRune() rune {
 	if c.Delimiter == "" {
 		return feedcsv.DefaultDelimiter
@@ -42,7 +40,7 @@ func (c *Config) DelimiterRune() rune {
 	return []rune(c.Delimiter)[0]
 }
 
-// Load reads feed.json from dir. Returns nil, nil if the file does not exist.
+// Load reads dir's feed.json, returning nil if there isn't one.
 func Load(dir string) (*Config, error) {
 	path := filepath.Join(dir, Filename)
 	data, err := os.ReadFile(path)

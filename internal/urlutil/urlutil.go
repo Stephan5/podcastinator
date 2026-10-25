@@ -1,4 +1,4 @@
-// Package urlutil provides URL and HTML encoding/decoding helpers.
+// Package urlutil encodes, escapes and slugifies URLs.
 package urlutil
 
 import (
@@ -10,18 +10,17 @@ import (
 
 var encodedPattern = regexp.MustCompile(`%[0-9A-Fa-f]{2}`)
 
-// IsAlreadyEncoded returns true if the string contains percent-encoded sequences.
+// IsAlreadyEncoded reports whether s has any percent-encoded sequences.
 func IsAlreadyEncoded(s string) bool {
 	return encodedPattern.MatchString(s)
 }
 
-// Encode percent-encodes a URL, preserving safe characters :/()?&=
-// If the URL already has encoded sequences, it is returned unchanged.
+// Encode percent-encodes rawURL, unless it has percent-encoded sequences
+// already.
 func Encode(rawURL string) (string, error) {
 	if IsAlreadyEncoded(rawURL) {
 		return rawURL, nil
 	}
-	// Decode first (in case of mixed state) then re-encode
 	decoded, err := url.QueryUnescape(strings.ReplaceAll(rawURL, "+", "%2B"))
 	if err != nil {
 		decoded = rawURL
@@ -30,17 +29,7 @@ func Encode(rawURL string) (string, error) {
 	if err != nil {
 		return rawURL, err
 	}
-	// Re-assemble with encoded path/query
 	return u.String(), nil
-}
-
-// Decode percent-decodes a URL.
-func Decode(rawURL string) string {
-	decoded, err := url.QueryUnescape(strings.ReplaceAll(rawURL, "+", "%2B"))
-	if err != nil {
-		return rawURL
-	}
-	return decoded
 }
 
 // HTMLEscape escapes special HTML characters in s.
@@ -62,37 +51,21 @@ func StripQuery(rawURL string) string {
 	return before
 }
 
-// ConvertHTTPToS3 converts an S3 HTTPS URL to an s3:// URI.
-// e.g. https://s3.eu-west-2.amazonaws.com/mybucket/key → s3://mybucket/key
-func ConvertHTTPToS3(rawURL string) string {
-	clean := StripQuery(rawURL)
-	// Match https://s3*.amazonaws.com/<bucket>/...
-	const awsPrefix = "amazonaws.com/"
-	_, rest, ok := strings.Cut(clean, awsPrefix)
-	if !ok {
-		return clean
-	}
-	return "s3://" + rest
-}
-
-// Slugify converts a string to a lowercase hyphen-separated slug.
+// Slugify lowercases s and joins its runs of ASCII letters and digits with
+// hyphens.
 func Slugify(s string) string {
-	s = strings.ToLower(s)
 	var b strings.Builder
-	prevHyphen := true // to avoid leading hyphen
-	for _, r := range s {
+	prevHyphen := true // no leading hyphen
+	for _, r := range strings.ToLower(s) {
 		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
 			b.WriteRune(r)
 			prevHyphen = false
-		} else {
-			if !prevHyphen {
-				b.WriteByte('-')
-				prevHyphen = true
-			}
+		} else if !prevHyphen {
+			b.WriteByte('-')
+			prevHyphen = true
 		}
 	}
-	result := strings.TrimRight(b.String(), "-")
-	return result
+	return strings.TrimRight(b.String(), "-")
 }
 
 // MimeTypeForExtension returns the enclosure MIME type for a podcast file

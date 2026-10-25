@@ -1,6 +1,5 @@
-// Package integration contains black-box integration tests for the podcastinator CLI.
-// Tests build the binary once in TestMain and then invoke it as a subprocess,
-// mirroring what the bash test suite does.
+// Package integration builds the podcastinator binary and tests it by
+// running it.
 package integration
 
 import (
@@ -25,11 +24,9 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
-// binary is the path to the compiled podcastinator binary, set in TestMain.
 var binary string
 
 func TestMain(m *testing.M) {
-	// Build the binary into a temp dir so we always test the current code.
 	tmp, err := os.MkdirTemp("", "podcastinator-integration-*")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to create temp dir: %v\n", err)
@@ -47,22 +44,11 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-// run executes the binary with the given arguments and returns stdout+stderr combined.
+// run runs the binary, returning its combined output and exit code.
 func run(args ...string) (string, int) {
-	cmd := exec.Command(binary, args...)
-	out, err := cmd.CombinedOutput()
-	code := 0
-	if err != nil {
-		if exit, ok := err.(*exec.ExitError); ok {
-			code = exit.ExitCode()
-		} else {
-			code = 1
-		}
-	}
-	return string(out), code
+	return runInDir("", args...)
 }
 
-// runInDir runs the binary from a specific working directory.
 func runInDir(dir string, args ...string) (string, int) {
 	cmd := exec.Command(binary, args...)
 	cmd.Dir = dir
@@ -120,18 +106,13 @@ func episode(title, date, url string) string {
 	return title + "\x1f\x1f" + date + "\x1f" + url
 }
 
-// --- build integration tests ---
-
-// TestBuildGoldenSnapshot builds RSS from the test CSV and compares its parsed
-// content against test/testdata/feed.xml.
-// Comparison is semantic (title, date, URL per item) so XML formatting differences
-// between the Go template and the legacy xmllint output do not cause false failures.
+// TestBuildGoldenSnapshot builds a feed and compares each episode's title,
+// date, URL and description with testdata/feed.xml's.
 func TestBuildGoldenSnapshot(t *testing.T) {
 	audio := audioServer(t)
 	feedRoot := t.TempDir()
 	writeHosting(t, feedRoot)
 
-	// The exact input CSV from the bash test (unit separator delimiter).
 	delim := "\x1f"
 	feedDir := writeFeed(t, feedRoot, "test", `{
 		"title": "Dudes Rock",
@@ -166,7 +147,6 @@ func TestBuildGoldenSnapshot(t *testing.T) {
 	actual := parseXMLItems(t, actualXML)
 	golden := parseXMLItems(t, goldenXML)
 
-	// Channel-level checks.
 	if actual.title != golden.title {
 		t.Errorf("channel title: got %q; want %q", actual.title, golden.title)
 	}
@@ -174,12 +154,10 @@ func TestBuildGoldenSnapshot(t *testing.T) {
 		t.Errorf("author from feed.json not in output")
 	}
 
-	// Structural check: lastBuildDate and pubDate must be present and non-empty.
 	if actual.lastBuildDate == "" {
 		t.Error("lastBuildDate missing from output")
 	}
 
-	// Item-level checks.
 	if len(actual.items) != len(golden.items) {
 		t.Fatalf("item count: got %d; want %d", len(actual.items), len(golden.items))
 	}
@@ -218,7 +196,6 @@ func TestBuildLastBuildDateFormat(t *testing.T) {
 	if m == nil {
 		t.Fatal("lastBuildDate not found in output")
 	}
-	// Must match RFC 2822 pattern
 	dateStr := strings.TrimSpace(string(m[1]))
 	if !regexp.MustCompile(`^[A-Z][a-z]{2}, \d{2} [A-Z][a-z]{2} \d{4} \d{2}:\d{2}:\d{2} GMT$`).MatchString(dateStr) {
 		t.Errorf("lastBuildDate %q is not valid RFC 2822", dateStr)
@@ -450,8 +427,6 @@ func TestInitWritesHosting(t *testing.T) {
 		t.Errorf("expected init to refuse to overwrite hosting.json, exit %d:\n%s", code, out)
 	}
 }
-
-// --- import and update integration tests ---
 
 func TestImportFromFile(t *testing.T) {
 	feedRoot := t.TempDir()
@@ -789,8 +764,6 @@ func assertWellFormed(t *testing.T, path string) {
 	}
 }
 
-// --- dates integration tests ---
-
 func TestDates(t *testing.T) {
 	feedRoot := t.TempDir()
 	dir := filepath.Join(feedRoot, "show")
@@ -824,8 +797,6 @@ func TestDates(t *testing.T) {
 		t.Error("expected dates without --from to fail")
 	}
 }
-
-// --- audio integration tests ---
 
 func TestAudioDownload(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -885,17 +856,6 @@ func TestAudioUploadTestResourceExists(t *testing.T) {
 	}
 }
 
-// TestAudioUploadDstURLHasSlashBetweenBucketAndKey is a regression test for the bug
-// where the destination HTTPS URL was constructed as:
-//
-//	https://s3.REGION.amazonaws.com/BUCKETrepo-dir/file.mp3   ← missing /
-//
-// instead of:
-//
-//	https://s3.REGION.amazonaws.com/BUCKET/repo-dir/file.mp3  ← correct
-//
-// This caused S3 moves to 404 immediately because the URL pointed at a
-// non-existent host rather than the correct bucket path.
 func TestAudioUploadDstURLHasSlashBetweenBucketAndKey(t *testing.T) {
 	feedRoot := t.TempDir()
 	bucket := "my-bucket"
@@ -903,8 +863,7 @@ func TestAudioUploadDstURLHasSlashBetweenBucketAndKey(t *testing.T) {
 	os.WriteFile(filepath.Join(feedRoot, "hosting.json"), []byte(fmt.Sprintf(
 		`{"bucket":%q,"region":%q}`, bucket, region)), 0644)
 
-	// The URL is already at the correct destination, so upload should detect
-	// "already at destination, skipping" without any S3 calls.
+	// Already at its destination, so this makes no S3 calls.
 	writeFeed(t, feedRoot, "my-show", `{"title":"My Show"}`,
 		episode("Episode 1", "Sat, 29 Jun 2002 03:00:00 GMT",
 			fmt.Sprintf("https://s3.%s.amazonaws.com/%s/my-show/01-episode-1.mp3", region, bucket)))
@@ -988,8 +947,6 @@ func TestAudioUploadWithoutHostingFails(t *testing.T) {
 	}
 }
 
-// --- XML parsing helpers ---
-
 type parsedFeed struct {
 	title         string
 	lastBuildDate string
@@ -1003,10 +960,7 @@ type parsedItem struct {
 	description  string
 }
 
-// parseXMLItems extracts channel title, lastBuildDate, and per-item fields from
-// raw RSS XML bytes using simple regex extraction. This is intentionally
-// format-agnostic so it works equally well on xmllint-formatted output and
-// our Go template output.
+// parseXMLItems pulls the fields TestBuildGoldenSnapshot compares out of a feed.
 func parseXMLItems(t *testing.T, data []byte) parsedFeed {
 	t.Helper()
 	src := string(data)
@@ -1038,7 +992,6 @@ func parseXMLItems(t *testing.T, data []byte) parsedFeed {
 
 	feed := parsedFeed{}
 
-	// Channel title: first <title> before any <item>
 	firstItem := strings.Index(src, "<item>")
 	channelSection := src
 	if firstItem > 0 {
@@ -1047,7 +1000,6 @@ func parseXMLItems(t *testing.T, data []byte) parsedFeed {
 	feed.title = extract("title", channelSection)
 	feed.lastBuildDate = extract("lastBuildDate", channelSection)
 
-	// Items
 	itemRe := regexp.MustCompile(`(?s)<item>(.*?)</item>`)
 	for _, m := range itemRe.FindAllStringSubmatch(src, -1) {
 		body := m[1]
@@ -1060,8 +1012,6 @@ func parseXMLItems(t *testing.T, data []byte) parsedFeed {
 	}
 	return feed
 }
-
-// --- publish integration tests ---
 
 // s3TestBucket returns the bucket to publish to, skipping unless a local S3
 // (SeaweedFS in CI) is configured via AWS_ENDPOINT_URL.

@@ -1,13 +1,10 @@
-// Package feedcsv handles reading and writing podcast feed CSV files.
-// The CSV format uses a configurable delimiter (default \x1F unit separator)
-// with columns: title, description, date, url, guid. The guid column was
-// added later, so files without it still read, with every GUID empty.
+// Package feedcsv reads and writes feed.csv, which has one episode per line
+// and the columns title, description, date, url and guid, separated by the
+// unit separator unless the feed says otherwise. Files from before the guid
+// column still read, with empty GUIDs.
 //
-// No CSV quoting is used — fields are split/joined on the raw delimiter
-// character, matching the behaviour of the original bash scripts. This avoids
-// encoding/csv mis-parsing field values that begin with a double-quote (e.g.
-// descriptions like `"Episode Title" is the...`) when the delimiter is a
-// non-standard character such as the unit separator.
+// Fields are split on the delimiter with no quoting, so a field can start
+// with a double quote, which encoding/csv would take as a quoted field.
 package feedcsv
 
 import (
@@ -18,7 +15,7 @@ import (
 
 const DefaultDelimiter = '\x1f'
 
-// Record represents one episode row in a feed CSV.
+// Record is one episode.
 type Record struct {
 	Title       string
 	Description string
@@ -32,8 +29,7 @@ type Record struct {
 // Header is the CSV's header row.
 var Header = []string{"title", "description", "date", "url", "guid"}
 
-// Read reads a CSV feed file and returns the records (excluding the header).
-// Fields are split on delim without any quoting interpretation.
+// Read returns the episodes in the CSV at path.
 func Read(path string, delim rune) ([]Record, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -44,7 +40,7 @@ func Read(path string, delim rune) ([]Record, error) {
 	var records []Record
 	for i, line := range splitLines(string(data)) {
 		if i == 0 {
-			continue // skip header
+			continue
 		}
 		fields := strings.Split(line, d)
 		for len(fields) < len(Header) {
@@ -61,8 +57,7 @@ func Read(path string, delim rune) ([]Record, error) {
 	return records, nil
 }
 
-// Write writes a header + records to path using the given delimiter.
-// Fields are joined on delim without any quoting.
+// Write writes the header and records to path.
 func Write(path string, delim rune, records []Record) error {
 	d := string(delim)
 	var sb strings.Builder
@@ -78,8 +73,7 @@ func Write(path string, delim rune, records []Record) error {
 	return nil
 }
 
-// WriteRaw writes a full CSV (including header) to path.
-// Each line is joined by delim and terminated with \n.
+// WriteRaw writes header and rows to path as they are.
 func WriteRaw(path string, delim rune, header []string, rows [][]string) error {
 	var sb strings.Builder
 	writeRow := func(fields []string) {
@@ -93,7 +87,7 @@ func WriteRaw(path string, delim rune, header []string, rows [][]string) error {
 	return os.WriteFile(path, []byte(sb.String()), 0644)
 }
 
-// ReadRaw reads all rows including the header, returning raw string slices.
+// ReadRaw returns the CSV's header and rows as they are, whatever its columns.
 func ReadRaw(path string, delim rune) (header []string, rows [][]string, err error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -111,13 +105,11 @@ func ReadRaw(path string, delim rune) (header []string, rows [][]string, err err
 	return header, rows, nil
 }
 
-// splitLines splits s on \n, trimming a trailing empty element.
+// splitLines splits s into lines, ignoring a trailing newline and any \r.
 func splitLines(s string) []string {
 	lines := strings.Split(strings.TrimRight(s, "\n"), "\n")
-	// Filter out any residual empty lines (e.g. from \r\n line endings)
-	var out []string
-	for _, l := range lines {
-		out = append(out, strings.TrimRight(l, "\r"))
+	for i, l := range lines {
+		lines[i] = strings.TrimRight(l, "\r")
 	}
-	return out
+	return lines
 }

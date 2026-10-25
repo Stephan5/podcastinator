@@ -248,7 +248,7 @@ Give the role an inline policy that can only touch the feed files, so a bad push
 
 `podcastinator <command> --help` has the details.
 
-### `import` — start a feed from an existing podcast
+### `import`
 
 ```shell
 podcastinator import https://example.com/podcast.rss
@@ -257,7 +257,7 @@ podcastinator import ~/Downloads/show.xml --slug my-show
 
 Fetches the feed and writes `feed/<slug>/feed.csv` (oldest episode first), `feed.json` (title, description, author, website and `source`) and `image.jpg`, preferring `itunes:image` and converting PNGs to JPEG. Every episode gets a new UUID as its GUID. The slug comes from the show's title unless `--slug` says otherwise. It won't overwrite an existing feed without `--force`, which gives every episode a new GUID, so subscribers would see them all again.
 
-### `update` — pick up new episodes
+### `update`
 
 ```shell
 podcastinator update               # every feed with a source
@@ -266,7 +266,7 @@ podcastinator update example-show
 
 Re-fetches each feed's `source` and appends the episodes dated after the newest one in its CSV. It matches on date rather than URL, because self-hosted episodes no longer have their source URLs. Run `audio upload` and `build` afterwards.
 
-### `build` — CSV → RSS
+### `build`
 
 ```shell
 podcastinator build                               # every feed
@@ -276,7 +276,7 @@ podcastinator build --exclude some-feed,another   # all but these
 
 Writes `feed/<slug>/feed.xml` from its `feed.csv` and `feed.json`. The feed and image URLs come from `feed` and `image` in `feed.json`, then their location in the bucket from `hosting.json`, and it fails if neither supplies them. Gives any episode without a GUID one, writing it to the CSV. Numbers each episode with `itunes:episode`, in CSV order; titles are left as they are in the CSV. Sends a `HEAD` request for each episode to fill in its length, 16 at a time by default; `--concurrency` changes that. Skips writing if the feed hasn't changed. Each `feed.xml` ends with a comment holding a hash of its inputs and of the version of build's output format, which `publish` and `status` check; a release that changes what `build` writes bumps that format version, so feeds need rebuilding after upgrading to it.
 
-### `dates` — reformat dates
+### `dates`
 
 ```shell
 podcastinator dates example-show --from "%b %d, %Y"
@@ -284,7 +284,7 @@ podcastinator dates example-show --from "%b %d, %Y"
 
 Parses the CSV's date column with a strftime format and rewrites it as RFC 2822. Backs up the original to `feed.csv.old`.
 
-### `audio upload` — copy episodes into the bucket
+### `audio upload`
 
 ```shell
 podcastinator audio upload example-show
@@ -292,7 +292,7 @@ podcastinator audio upload example-show
 
 Downloads each episode that isn't already in the bucket, uploads it to `<prefix>/<slug>/` with a numbered, slugified name (`001-episode-title.mp3`) and an audio `Content-Type`, and rewrites the CSV with the new URLs. Local `file://` URLs, relative to the feed directory, are uploaded directly, and an episode already in the bucket by its S3 URL is pointed at its `public_url` one. Episodes keep their GUIDs, so subscribers don't see moved episodes as new.
 
-### `audio prune` — find unreferenced audio
+### `audio prune`
 
 ```shell
 podcastinator audio prune example-show                     # report
@@ -302,7 +302,7 @@ podcastinator audio prune example-show --fail-on-orphans   # exit 2 if any
 
 Compares the objects under `<prefix>/<slug>/` with the URLs in the CSV and reports, and with `--delete` deletes, files nothing points at. `feed.xml` and `image.jpg` are never orphans.
 
-### `audio download` — keep a local copy
+### `audio download`
 
 ```shell
 podcastinator audio download example-show ./archive
@@ -310,7 +310,7 @@ podcastinator audio download example-show ./archive
 
 Downloads all episode audio to `archive/example-show/items/`, copies the feed's files alongside, and writes a `local.csv` with `file://items/<filename>` URLs.
 
-### `publish` — upload feeds
+### `publish`
 
 ```shell
 podcastinator publish                  # every feed
@@ -320,7 +320,7 @@ podcastinator publish --dry-run        # report what would change
 
 Uploads each feed's `feed.xml` and `image.jpg` to `<prefix>/<slug>/`. Files that already match the bucket by ETag are skipped. Refuses to upload anything if a feed's `feed.xml` is out of date with its `feed.csv`, `feed.json` or `hosting.json`, or was built by a version that builds feeds differently. Never touches episode audio.
 
-### `status` — what state is everything in
+### `status`
 
 ```
 $ podcastinator status
