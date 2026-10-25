@@ -101,7 +101,6 @@ func TestBuildChannelMetadata(t *testing.T) {
 	assertContains(t, src, "<title>Dudes Rock</title>")
 	assertContains(t, src, "<itunes:author>Real-ass dudes</itunes:author>")
 	assertContains(t, src, opts.FeedURL)
-	assertContains(t, src, "<itunes:new-feed-url>"+opts.FeedURL+"</itunes:new-feed-url>")
 	assertContains(t, src, opts.ImageURL)
 	assertContains(t, src, opts.WebsiteURL)
 	assertContains(t, src, "<language>en-gb</language>")

@@ -2,6 +2,12 @@
 
 Newest first. A release's description on GitHub is its section here.
 
+## Unreleased
+
+### Removed
+
+* Generated feeds no longer carry `<itunes:new-feed-url>`. It pointed at the feed's own URL so subscribers on an old URL would follow it over; with that move done, it's dropped. To move a feed, redirect the old URL instead.
+
 ## 0.5.0
 
 ### Changed

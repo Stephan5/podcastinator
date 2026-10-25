@@ -122,7 +122,7 @@ Then set `public_url` to `https://<domain>`. `publish` checks that `<public_url>
 
 ### Moving a feed
 
-If a feed's subscribers are on an old URL, change `hosting.json` (or `feed` in `feed.json`), `build` and `publish`. Every generated feed carries `<itunes:new-feed-url>` pointing at its own feed URL, so if the old URL keeps serving the rebuilt feed for a few weeks, apps that honour the tag move over on their own ([Apple: change the RSS feed URL](https://podcasters.apple.com/support/837-change-the-rss-feed-url)).
+If a feed's subscribers are on an old URL, change `hosting.json` (or `feed` in `feed.json`), `build` and `publish`, then have the old URL return a 301 redirect to the new one for a few weeks so podcast apps move over ([Apple: change the RSS feed URL](https://podcasters.apple.com/support/837-change-the-rss-feed-url)). Generated feeds don't carry `<itunes:new-feed-url>`.
 
 ### Publishing from CI
 
