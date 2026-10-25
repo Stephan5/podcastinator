@@ -118,9 +118,9 @@ func TestLoadWithCustomDelimiter(t *testing.T) {
 	}
 }
 
-func TestLoadWebsite(t *testing.T) {
+func TestLoadURLs(t *testing.T) {
 	dir := t.TempDir()
-	content := `{"title":"Test Show","website":"https://example.com/show"}`
+	content := `{"title":"Test Show","website":"https://example.com/show","image":"https://example.com/show.jpg","feed":"https://example.com/show.xml"}`
 	os.WriteFile(filepath.Join(dir, feedconfig.Filename), []byte(content), 0644)
 
 	cfg, err := feedconfig.Load(dir)
@@ -129,5 +129,11 @@ func TestLoadWebsite(t *testing.T) {
 	}
 	if cfg.WebsiteURL != "https://example.com/show" {
 		t.Errorf("WebsiteURL = %q; want %q", cfg.WebsiteURL, "https://example.com/show")
+	}
+	if cfg.ImageURL != "https://example.com/show.jpg" {
+		t.Errorf("ImageURL = %q; want %q", cfg.ImageURL, "https://example.com/show.jpg")
+	}
+	if cfg.FeedURL != "https://example.com/show.xml" {
+		t.Errorf("FeedURL = %q; want %q", cfg.FeedURL, "https://example.com/show.xml")
 	}
 }

@@ -128,7 +128,7 @@ func runCSV2RSS(inputFile, title, description, author, websiteURL, imageURL, fee
 
 	if feedURL == "" || imageURL == "" {
 		return fmt.Errorf("no feed URL or image URL for %q: add %s to the feed directory, "+
-			"set \"feed_url\" and \"image_url\" in feed.json, or pass --feed-url and --image-url",
+			"set \"feed\" and \"image\" in feed.json, or pass --feed-url and --image-url",
 			repoDir, hosting.Filename)
 	}
 

@@ -22,8 +22,8 @@ type Config struct {
 	// Use the JSON unicode escape \u001f to represent the unit separator.
 	Delimiter  string `json:"delimiter,omitempty"`
 	WebsiteURL string `json:"website,omitempty"`
-	ImageURL   string `json:"image_url,omitempty"`
-	FeedURL    string `json:"feed_url,omitempty"`
+	ImageURL   string `json:"image,omitempty"`
+	FeedURL    string `json:"feed,omitempty"`
 }
 
 // DelimiterRune returns the configured delimiter as a rune,

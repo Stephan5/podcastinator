@@ -55,7 +55,7 @@ Episodes are numbered in CSV order, and each episode's URL is its GUID, so chang
 }
 ```
 
-Optional fields: `delimiter` (default `\u001f`), `website` (defaults to this repo), `image_url` and `feed_url` (default to their location in the bucket, from `hosting.json`).
+Optional fields: `delimiter` (default `\u001f`), `website` (defaults to this repo), `image` and `feed`, the cover art and feed URLs (default to their location in the bucket, from `hosting.json`).
 
 ## Hosting
 
@@ -102,7 +102,7 @@ Then set `public_url` to `https://<domain>`. `publish` checks that `<public_url>
 
 ### Moving a feed
 
-If a feed's subscribers are on an old URL, run `publish` first so the feed exists at its new home, then `regenerate`. Every generated feed carries `<itunes:new-feed-url>` pointing at its own `feed_url`, so if the old URL keeps serving the regenerated feed for a few weeks, apps that honour the tag move over on their own ([Apple: change the RSS feed URL](https://podcasters.apple.com/support/837-change-the-rss-feed-url)).
+If a feed's subscribers are on an old URL, run `publish` first so the feed exists at its new home, then `regenerate`. Every generated feed carries `<itunes:new-feed-url>` pointing at its own feed URL, so if the old URL keeps serving the regenerated feed for a few weeks, apps that honour the tag move over on their own ([Apple: change the RSS feed URL](https://podcasters.apple.com/support/837-change-the-rss-feed-url)).
 
 ### Publishing from CI
 
@@ -124,7 +124,7 @@ jobs:
         with:
           role-to-assume: ${{ vars.PUBLISH_ROLE_ARN }}
           aws-region: eu-west-2
-      - run: go install github.com/Stephan5/podcastinator/cmd/podcastinator@v0.1.0
+      - run: go install github.com/Stephan5/podcastinator/cmd/podcastinator@v0.3.0
       - run: podcastinator publish
 ```
 
