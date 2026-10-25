@@ -325,8 +325,8 @@ func TestBuildSerialFeed(t *testing.T) {
 	xml, _ := os.ReadFile(filepath.Join(dir, "feed.xml"))
 	for _, want := range []string{
 		"<itunes:type>serial</itunes:type>",
-		"<title>1: Ep1</title>\n      <itunes:episode>1</itunes:episode>",
-		"<title>2: Ep2</title>\n      <itunes:episode>2</itunes:episode>",
+		"<title>Ep1</title>\n      <itunes:episode>1</itunes:episode>",
+		"<title>Ep2</title>\n      <itunes:episode>2</itunes:episode>",
 	} {
 		if !strings.Contains(string(xml), want) {
 			t.Errorf("expected %q in feed.xml:\n%s", want, xml)
@@ -484,7 +484,7 @@ func TestImportFromFile(t *testing.T) {
 		}
 		seen[guid] = true
 	}
-	if !strings.Contains(string(data), "1: 2002-06-29\x1f") {
+	if !strings.Contains(string(data), "\n2002-06-29\x1f") {
 		t.Errorf("first episode missing from CSV:\n%s", data)
 	}
 	// Descriptions are stored escaped, as build writes them out verbatim.

@@ -135,17 +135,17 @@ func TestBuildItemCount(t *testing.T) {
 	}
 }
 
-func TestBuildItemTitlesNumbered(t *testing.T) {
+func TestBuildItemTitles(t *testing.T) {
 	xmlBytes, _ := buildTestFeed(t)
 	src := string(xmlBytes)
 
 	for i, rec := range testRecords {
-		want := fmt.Sprintf("<title>%d: %s</title>", i+1, rec.Title)
+		want := fmt.Sprintf("<title>%s</title>", rec.Title)
 		// Note: xml special chars in title get escaped
 		if !strings.Contains(src, want) {
 			// Try with XML-escaped title (e.g. & → &amp;)
 			escaped := strings.ReplaceAll(rec.Title, "&", "&amp;")
-			want2 := fmt.Sprintf("<title>%d: %s</title>", i+1, escaped)
+			want2 := fmt.Sprintf("<title>%s</title>", escaped)
 			if !strings.Contains(src, want2) {
 				t.Errorf("item %d: expected title %q in output", i+1, want)
 			}
@@ -1037,7 +1037,7 @@ func TestBuildItunesTypeAndEpisodeNumbers(t *testing.T) {
 		t.Errorf("feed isn't valid XML: %v", err)
 	}
 
-	// Every episode is numbered in CSV order, matching its title's prefix.
+	// Every episode is numbered in CSV order, and its title is left as it is.
 	numbers := regexp.MustCompile(`<itunes:episode>(\d+)</itunes:episode>`).FindAllStringSubmatch(src, -1)
 	if len(numbers) != len(testRecords) {
 		t.Fatalf("got %d itunes:episode tags; want %d", len(numbers), len(testRecords))
@@ -1047,5 +1047,5 @@ func TestBuildItunesTypeAndEpisodeNumbers(t *testing.T) {
 			t.Errorf("episode %d numbered %s", i+1, m[1])
 		}
 	}
-	assertContains(t, src, "<title>1: 2002-06-29</title>\n      <itunes:episode>1</itunes:episode>")
+	assertContains(t, src, "<title>2002-06-29</title>\n      <itunes:episode>1</itunes:episode>")
 }

@@ -278,7 +278,7 @@ podcastinator build example-show another-show     # just these
 podcastinator build --exclude some-feed,another   # all but these
 ```
 
-Writes `feed/<slug>/feed.xml` from its `feed.csv` and `feed.json`. The feed and image URLs come from `feed` and `image` in `feed.json`, then their location in the bucket from `hosting.json`, and it fails if neither supplies them. Gives any episode without a GUID one, writing it to the CSV. Numbers each episode with `itunes:episode`, in CSV order, matching the `N:` in its title. Sends a `HEAD` request for each episode to fill in its length, 16 at a time by default; `--concurrency` changes that. Skips writing if the feed hasn't changed. Each `feed.xml` ends with a comment holding a hash of its inputs, which `publish` and `status` check.
+Writes `feed/<slug>/feed.xml` from its `feed.csv` and `feed.json`. The feed and image URLs come from `feed` and `image` in `feed.json`, then their location in the bucket from `hosting.json`, and it fails if neither supplies them. Gives any episode without a GUID one, writing it to the CSV. Numbers each episode with `itunes:episode`, in CSV order; titles are left as they are in the CSV. Sends a `HEAD` request for each episode to fill in its length, 16 at a time by default; `--concurrency` changes that. Skips writing if the feed hasn't changed. Each `feed.xml` ends with a comment holding a hash of its inputs, which `publish` and `status` check.
 
 ### `dates` — reformat dates
 

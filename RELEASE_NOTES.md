@@ -2,6 +2,12 @@
 
 Newest first. A release's description on GitHub is its section here.
 
+## Unreleased
+
+### Changed
+
+* Episode titles are no longer prefixed with their number (`12: Title`). Apps that show `<itunes:episode>`, which every episode has carried since 0.7.0, number them already, so the prefix doubled up. GUIDs don't change, so subscribers see the new titles on the same episodes rather than new ones.
+
 ## 0.8.0
 
 ### Changed

@@ -261,7 +261,7 @@ func Build(opts FeedOptions, records []feedcsv.Record, logger io.Writer) ([]byte
 
 		items = append(items, rssItem{
 			Number:      num,
-			Title:       fmt.Sprintf("%d: %s", num, rec.Title),
+			Title:       rec.Title,
 			Description: desc,
 			PubDate:     rec.Date,
 			Link:        htmlURL,
