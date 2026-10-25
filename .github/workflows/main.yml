@@ -1,0 +1,49 @@
+name: Tests
+
+on:
+  push:
+    branches: [ "**" ]
+  pull_request:
+    branches: [ "**" ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxml2-utils xmlstarlet
+
+      # Local S3 (SeaweedFS) for the publish/selfhost integration tests. Its S3
+      # gateway makes an admin identity from the AWS_* credentials it's given.
+      - name: Start SeaweedFS
+        run: |
+          docker run -d --name seaweedfs -p 8333:8333 \
+            -e AWS_ACCESS_KEY_ID=test -e AWS_SECRET_ACCESS_KEY=test \
+            chrislusf/seaweedfs:4.48 server -s3 -master.telemetry=false
+
+      # Retried while SeaweedFS finishes starting up.
+      - name: Create test S3 bucket
+        env:
+          AWS_ACCESS_KEY_ID: test
+          AWS_SECRET_ACCESS_KEY: test
+          AWS_DEFAULT_REGION: eu-west-2
+        run: |
+          for i in $(seq 1 30); do
+            aws --endpoint-url http://localhost:8333 s3 mb s3://test-bucket && exit 0
+            sleep 2
+          done
+          docker logs seaweedfs
+          exit 1
+
+      - name: Run tests
+        env:
+          AWS_ACCESS_KEY_ID: test
+          AWS_SECRET_ACCESS_KEY: test
+          AWS_DEFAULT_REGION: eu-west-2
+          AWS_ENDPOINT_URL: http://localhost:8333
+        run: make test-all

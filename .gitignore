@@ -1,0 +1,8 @@
+# Ignore IDEA
+.idea
+
+# Ignore all .DS_Store files (macOS specific)
+.DS_Store
+
+# Ignore build directory
+build
