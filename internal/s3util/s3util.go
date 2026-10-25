@@ -13,7 +13,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
+	"github.com/aws/aws-sdk-go-v2/feature/s3/transfermanager"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/smithy-go"
 	smithyhttp "github.com/aws/smithy-go/transport/http"
@@ -22,6 +22,7 @@ import (
 // Client wraps S3 operations.
 type Client struct {
 	svc    *s3.Client
+	tm     *transfermanager.Client
 	region string
 }
 
@@ -33,16 +34,17 @@ func New(ctx context.Context, region string) (*Client, error) {
 	}
 	// A custom endpoint (AWS_ENDPOINT_URL, e.g. SeaweedFS in CI) needs path-style addressing.
 	usePathStyle := os.Getenv("AWS_ENDPOINT_URL") != ""
+	svc := s3.NewFromConfig(cfg, func(o *s3.Options) { o.UsePathStyle = usePathStyle })
 	return &Client{
-		svc:    s3.NewFromConfig(cfg, func(o *s3.Options) { o.UsePathStyle = usePathStyle }),
+		svc:    svc,
+		tm:     transfermanager.New(svc),
 		region: region,
 	}, nil
 }
 
 // UploadReader uploads from r to s3://bucket/key.
 func (c *Client) UploadReader(ctx context.Context, bucket, key, contentType string, r io.Reader) error {
-	uploader := manager.NewUploader(c.svc)
-	_, err := uploader.Upload(ctx, &s3.PutObjectInput{
+	_, err := c.tm.UploadObject(ctx, &transfermanager.UploadObjectInput{
 		Bucket:      aws.String(bucket),
 		Key:         aws.String(key),
 		Body:        r,
@@ -64,18 +66,7 @@ func (c *Client) DownloadAndUpload(ctx context.Context, srcURL, bucket, key, con
 	if resp.StatusCode >= 400 {
 		return fmt.Errorf("download %s: HTTP %d", srcURL, resp.StatusCode)
 	}
-
-	uploader := manager.NewUploader(c.svc)
-	_, err = uploader.Upload(ctx, &s3.PutObjectInput{
-		Bucket:      aws.String(bucket),
-		Key:         aws.String(key),
-		Body:        resp.Body,
-		ContentType: optional(contentType),
-	})
-	if err != nil {
-		return fmt.Errorf("upload s3://%s/%s: %w", bucket, key, err)
-	}
-	return nil
+	return c.UploadReader(ctx, bucket, key, contentType, resp.Body)
 }
 
 // PutBytes uploads a small object in a single PutObject, so its ETag is the
@@ -103,14 +94,12 @@ func (c *Client) ETag(ctx context.Context, bucket, key string) (string, error) {
 		Key:    aws.String(key),
 	})
 	if err != nil {
-		var respErr *smithyhttp.ResponseError
-		if errors.As(err, &respErr) {
+		if respErr, ok := errors.AsType[*smithyhttp.ResponseError](err); ok {
 			if code := respErr.HTTPStatusCode(); code == http.StatusNotFound || code == http.StatusForbidden {
 				return "", nil
 			}
 		}
-		var apiErr smithy.APIError
-		if errors.As(err, &apiErr) && apiErr.ErrorCode() == "NotFound" {
+		if apiErr, ok := errors.AsType[smithy.APIError](err); ok && apiErr.ErrorCode() == "NotFound" {
 			return "", nil
 		}
 		return "", fmt.Errorf("head s3://%s/%s: %w", bucket, key, err)

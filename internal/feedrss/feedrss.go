@@ -313,15 +313,13 @@ func fetchContentLengths(records []feedcsv.Record, urls []string, fetcher func(s
 			<-sem
 			break
 		}
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			defer func() { <-sem }()
 			lengths[i], errs[i] = fetcher(u)
 			if errs[i] != nil {
 				failed.Store(true)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 
@@ -350,7 +348,7 @@ func fetchContentLength(rawURL string) (string, error) {
 // HashContent computes SHA-256 of the RSS XML bytes, excluding lastBuildDate and pubDate lines.
 func HashContent(xmlBytes []byte) string {
 	h := sha256.New()
-	for _, line := range strings.Split(string(xmlBytes), "\n") {
+	for line := range strings.SplitSeq(string(xmlBytes), "\n") {
 		trimmed := strings.TrimSpace(line)
 		if strings.HasPrefix(trimmed, "<lastBuildDate>") || strings.HasPrefix(trimmed, "<pubDate>") {
 			continue
