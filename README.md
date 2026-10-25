@@ -104,22 +104,47 @@ The bucket ends up laid out as:
     001-episode-title.mp3  ← uploaded by audio upload
 ```
 
-Objects need to be publicly readable, which is simplest with a bucket policy granting `s3:GetObject` on `arn:aws:s3:::<bucket>/*`.
+Podcast apps need to read everything in the bucket. The recommended setup keeps the bucket private and serves it through CloudFront, as below. Without CloudFront, make the objects public instead, with a bucket policy granting `s3:GetObject` on `arn:aws:s3:::<bucket>/*` to everyone.
+
+podcastinator itself reaches the bucket through the AWS API with your credentials, so it works the same either way.
 
 ### Custom domain (CloudFront)
 
-To serve feeds from your own domain, map it straight onto the bucket root so `https://<domain>/<feed>/feed.xml` is the object `<feed>/feed.xml`:
+To serve everything from your own domain, map it straight onto the bucket root so `https://<domain>/<feed>/feed.xml` is the object `<feed>/feed.xml`, and let only CloudFront read the bucket:
 
 1. Request an ACM certificate for the domain in **us-east-1**, the only region CloudFront takes certificates from ([AWS docs](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/cnames-and-https-requirements.html)), and validate it via DNS.
 2. Create a CloudFront distribution:
-   - Origin: the bucket, `<bucket>.s3.<region>.amazonaws.com`.
+   - Origin: the bucket's REST endpoint, `<bucket>.s3.<region>.amazonaws.com`, not its website endpoint.
+   - Origin access: a new **origin access control** (OAC), signing requests, so CloudFront can read the private bucket ([AWS docs](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/private-content-restricting-access-to-s3.html)).
    - Alternate domain name: your domain, with the certificate from step 1.
    - Viewer protocol policy: redirect HTTP to HTTPS.
-   - Cache policy `CachingOptimized`. It honours each object's `Cache-Control`, which `publish` sets to 5 minutes for feeds and the index and a day for cover art, so no invalidations are needed.
+   - Cache policy `CachingOptimized`. It honours each object's `Cache-Control`, which `publish` sets to 5 minutes for feeds and the index and a day for cover art, so they need no invalidations. Episode audio has no `Cache-Control`, so CloudFront keeps it for its default of a day; if you replace an episode's file or change its metadata, invalidate its path.
    - No default root object and no custom error responses, so a missing feed is a 404 rather than an HTML page podcast apps choke on.
-3. Point a DNS record for the domain at the distribution.
+3. Give the bucket a policy that only lets the distribution read it:
+
+   ```json
+   {
+     "Version": "2012-10-17",
+     "Statement": [
+       {
+         "Effect": "Allow",
+         "Principal": { "Service": "cloudfront.amazonaws.com" },
+         "Action": ["s3:GetObject", "s3:ListBucket"],
+         "Resource": ["arn:aws:s3:::<bucket>", "arn:aws:s3:::<bucket>/*"],
+         "Condition": {
+           "StringEquals": { "AWS:SourceArn": "arn:aws:cloudfront::<account-id>:distribution/<distribution-id>" }
+         }
+       }
+     ]
+   }
+   ```
+
+   `s3:ListBucket` is what makes a missing file a 404 rather than a 403. Then turn on all four Block Public Access settings for the bucket.
+4. Point a DNS record for the domain at the distribution.
 
 Then set `public_url` to `https://<domain>`. `publish` checks that `<public_url>/index.json` is reachable after uploading, so a broken domain shows up there rather than in podcast apps.
+
+To move an existing public bucket behind CloudFront: add the OAC to the origin and wait for it to deploy, replace the public bucket policy with the one above, check `https://<domain>/index.json` still loads and the S3 URL now gives a 403, then turn on Block Public Access, which rejects a public policy so has to come last. Anything still using the bucket's S3 URLs stops working, including feeds built by podcastinator before 0.8.0, whose audio has S3 URLs: switch their URLs first (`audio upload` does it per feed).
 
 ### Moving a feed
 
