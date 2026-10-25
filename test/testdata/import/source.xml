@@ -30,8 +30,6 @@
 <p>Bill & Ben fight back.</p>]]></description>
       <pubDate>Wed, 03 Jan 2024 18:30:00 +0100</pubDate>
       <guid isPermaLink="false">host-guid-3</guid>
-      <!-- Clock time; stored as seconds. -->
-      <itunes:duration>1:02:03</itunes:duration>
       <enclosure url="https://cdn.example.com/bb/ep3.mp3?source=rss&amp;id=3" length="1000" type="audio/mpeg"/>
     </item>
 
@@ -58,7 +56,6 @@
       <description>&lt;p&gt;All about pots &amp;amp; pans.&lt;/p&gt;</description>
       <pubDate>Tue, 02 Jan 2024 09:00:00 GMT</pubDate>
       <guid isPermaLink="false">host-guid-2</guid>
-      <itunes:duration>95</itunes:duration>
       <enclosure url="https://cdn.example.com/bb/ep2.m4a" length="1000" type="audio/x-m4a"/>
     </item>
 

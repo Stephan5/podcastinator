@@ -13,7 +13,7 @@ func TestReadWriteRoundTrip(t *testing.T) {
 	path := filepath.Join(dir, "feed.csv")
 
 	records := []feedcsv.Record{
-		{Title: "Episode 1", Description: "First ep", Date: "Sat, 29 Jun 2002 03:00:00 GMT", URL: "https://example.com/1.mp3", GUID: "6f1c1e0a-3b5d-4c2e-9f7a-2d8b4e6a1c3f", Duration: "3723"},
+		{Title: "Episode 1", Description: "First ep", Date: "Sat, 29 Jun 2002 03:00:00 GMT", URL: "https://example.com/1.mp3", GUID: "6f1c1e0a-3b5d-4c2e-9f7a-2d8b4e6a1c3f"},
 		{Title: "Episode 2", Description: "", Date: "Sun, 30 Jun 2002 19:07:00 +0100", URL: "https://example.com/2.mp3"},
 		{Title: "Ep. 3 – Special: \"Quoted\"", Description: "Desc", Date: "Mon, 01 Jul 2002 20:33:05 GMT", URL: "https://example.com/3.mp3"},
 	}
@@ -190,8 +190,8 @@ func TestReadRawWriteRaw(t *testing.T) {
 	}
 }
 
-// TestReadWithoutGUIDColumn checks CSVs written before the guid and duration
-// columns existed still read, with those fields empty.
+// TestReadWithoutGUIDColumn checks CSVs written before the guid column
+// existed still read, with empty GUIDs.
 func TestReadWithoutGUIDColumn(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "feed.csv")
 	os.WriteFile(path, []byte("title\x1fdescription\x1fdate\x1furl\n"+
@@ -206,12 +206,12 @@ func TestReadWithoutGUIDColumn(t *testing.T) {
 		t.Fatalf("got %+v; want [%+v]", got, want)
 	}
 
-	// Rewriting it adds the columns.
+	// Rewriting it adds the column.
 	if err := feedcsv.Write(path, feedcsv.DefaultDelimiter, got); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
 	data, _ := os.ReadFile(path)
-	if want := "title\x1fdescription\x1fdate\x1furl\x1fguid\x1fduration\n"; string(data[:len(want)]) != want {
+	if want := "title\x1fdescription\x1fdate\x1furl\x1fguid\n"; string(data[:len(want)]) != want {
 		t.Errorf("header = %q", data)
 	}
 }

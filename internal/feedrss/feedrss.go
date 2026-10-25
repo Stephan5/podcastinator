@@ -18,7 +18,6 @@ import (
 	"time"
 
 	"github.com/Stephan5/podcastinator/internal/dateutil"
-	"github.com/Stephan5/podcastinator/internal/durationutil"
 	"github.com/Stephan5/podcastinator/internal/feedcsv"
 	"github.com/Stephan5/podcastinator/internal/urlutil"
 )
@@ -142,9 +141,6 @@ var rssTemplate = template.Must(template.New("rss").Funcs(template.FuncMap{
       <guid{{if not .PermaLink}} isPermaLink="false"{{end}}>{{xmlEscapeAttr .GUID}}</guid>
       <title>{{xmlEscape .Title}}</title>
       <itunes:episode>{{.Number}}</itunes:episode>
-      {{- if .Duration}}
-      <itunes:duration>{{.Duration}}</itunes:duration>
-      {{- end}}
       {{- if .Description}}
       <description>{{.Description}}</description>
       {{- end}}
@@ -175,7 +171,6 @@ type rssTemplateData struct {
 
 type rssItem struct {
 	Number      int
-	Duration    string // whole seconds; empty leaves itunes:duration out
 	Title       string
 	Description string
 	PubDate     string
@@ -206,18 +201,10 @@ func Build(opts FeedOptions, records []feedcsv.Record, logger io.Writer) ([]byte
 
 	// Check every record before making any requests, so bad data fails fast.
 	encodedURLs := make([]string, len(records))
-	durations := make([]string, len(records))
 	for i, rec := range records {
 		num := i + 1
 		if err := dateutil.ValidateRFC2822(rec.Date); err != nil {
 			return nil, fmt.Errorf("item %d (%q): %w", num, rec.Title, err)
-		}
-		if rec.Duration != "" {
-			secs, err := durationutil.Parse(rec.Duration)
-			if err != nil {
-				return nil, fmt.Errorf("item %d (%q): %w", num, rec.Title, err)
-			}
-			durations[i] = fmt.Sprint(secs)
 		}
 		encodedURL, err := urlutil.Encode(rec.URL)
 		if err != nil {
@@ -273,7 +260,6 @@ func Build(opts FeedOptions, records []feedcsv.Record, logger io.Writer) ([]byte
 
 		items = append(items, rssItem{
 			Number:      num,
-			Duration:    durations[i],
 			Title:       rec.Title,
 			Description: rec.Description,
 			PubDate:     rec.Date,
@@ -428,7 +414,6 @@ type rssDocItem struct {
 	Description string       `xml:"description"`
 	PubDate     string       `xml:"pubDate"`
 	GUID        string       `xml:"guid"`
-	Duration    string       `xml:"http://www.itunes.com/dtds/podcast-1.0.dtd duration"`
 	Enclosure   rssEnclosure `xml:"enclosure"`
 }
 
@@ -501,13 +486,6 @@ func Parse(r io.Reader) (*ParsedFeed, error) {
 		// and import skips it.
 		decodedURL := urlutil.HTMLUnescape(item.Enclosure.URL)
 
-		// Stored as seconds, whichever form the feed used. One that doesn't
-		// parse is left out rather than failing the import.
-		duration := ""
-		if secs, err := durationutil.Parse(item.Duration); err == nil {
-			duration = fmt.Sprint(secs)
-		}
-
 		items = append(items, itemWithTime{
 			rec: feedcsv.Record{
 				Title:       item.Title,
@@ -515,7 +493,6 @@ func Parse(r io.Reader) (*ParsedFeed, error) {
 				Date:        item.PubDate,
 				URL:         decodedURL,
 				GUID:        strings.TrimSpace(item.GUID),
-				Duration:    duration,
 			},
 			t: t,
 		})
