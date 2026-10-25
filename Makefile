@@ -80,6 +80,27 @@ clean:
 
 VERSION := $(shell sed -n 's/^const version = "\(.*\)"$$/\1/p' cmd/podcastinator/version.go)
 
+# Prepares release V (make cut V=0.10.0) on master: sets the version in
+# version.go, points the README's go install lines at it and heads the release
+# notes' Unreleased section with it, then commits that as "cut vV". Push it,
+# then run make release.
+.PHONY: cut
+cut:
+	@echo "$(V)" | grep -qxE '[0-9]+\.[0-9]+\.[0-9]+' || { echo "Usage: make cut V=<major>.<minor>.<patch>" >&2; exit 1; }
+	@awk -v old="$(VERSION)" -v new="$(V)" 'BEGIN { split(old, o, "."); split(new, n, "."); for (i = 1; i <= 3; i++) if (n[i] != o[i]) exit !(n[i] + 0 > o[i] + 0); exit 1 }' || { echo "$(V) isn't newer than $(VERSION)" >&2; exit 1; }
+	@test -z "$$(git status --porcelain)" || { echo "Commit or stash your changes first" >&2; exit 1; }
+	@test "$$(git rev-parse --abbrev-ref HEAD)" = master || { echo "Cut from master" >&2; exit 1; }
+	@git fetch -q origin master --tags
+	@test "$$(git rev-parse HEAD)" = "$$(git rev-parse origin/master)" || { echo "master doesn't match origin/master; pull or push first" >&2; exit 1; }
+	@! git rev-parse -q --verify "refs/tags/v$(V)" >/dev/null || { echo "v$(V) is already tagged" >&2; exit 1; }
+	@awk '$$0 == "## Unreleased" {found = 1; next} found && /^## / {exit} found' RELEASE_NOTES.md | grep -q '[^[:space:]]' || { echo "RELEASE_NOTES.md has no notes under '## Unreleased'" >&2; exit 1; }
+	sed -i.bak 's/^const version = ".*"$$/const version = "$(V)"/' cmd/podcastinator/version.go
+	sed -i.bak 's#podcastinator/cmd/podcastinator@v[0-9][0-9.]*#podcastinator/cmd/podcastinator@v$(V)#' README.md
+	sed -i.bak 's/^## Unreleased$$/## $(V)/' RELEASE_NOTES.md
+	@rm cmd/podcastinator/version.go.bak README.md.bak RELEASE_NOTES.md.bak
+	git commit -q -m "cut v$(V)" cmd/podcastinator/version.go README.md RELEASE_NOTES.md
+	@echo "Committed \"cut v$(V)\". Check it with git show, then git push and make release."
+
 # Tags master with the version in version.go and pushes the tag, which runs the
 # release workflow. It first checks what the workflow would refuse, so a bad tag
 # never reaches GitHub.
@@ -120,6 +141,7 @@ help:
 	@echo "  lint               Run fmt + vet"
 	@echo ""
 	@echo "Release:"
+	@echo "  cut V=x.y.z        Set the version, README and release notes for V and commit"
 	@echo "  release            Tag master with the version in version.go and push the tag"
 	@echo ""
 	@echo "Other:"
