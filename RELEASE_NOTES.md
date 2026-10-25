@@ -2,6 +2,12 @@
 
 Newest first. A release's description on GitHub is its section here.
 
+## Unreleased
+
+### Removed
+
+* Feeds no longer carry `<copyright>none</copyright>`, which claimed something podcastinator can't know. Feeds count as stale after upgrading, so rebuild them.
+
 ## 0.11.1
 
 ### Removed

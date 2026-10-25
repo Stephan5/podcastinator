@@ -104,7 +104,9 @@ func TestBuildChannelMetadata(t *testing.T) {
 	assertContains(t, src, opts.ImageURL)
 	assertContains(t, src, opts.WebsiteURL)
 	assertContains(t, src, "<language>en-gb</language>")
-	assertContains(t, src, "<copyright>none</copyright>")
+	if strings.Contains(src, "<copyright>") {
+		t.Error("feeds shouldn't claim a copyright; podcastinator doesn't know who holds it")
+	}
 	assertContains(t, src, "<generator>Stephan5/podcastinator</generator>")
 
 	// The show's description goes in as it is, in itunes:summary too, which
@@ -1027,8 +1029,8 @@ func TestStampedInputs(t *testing.T) {
 // bumped and feeds built by an older version count as stale. If the change is
 // deliberate, bump FormatVersion and set both constants here to the new values.
 func TestFormatVersion(t *testing.T) {
-	const wantVersion = 4
-	const wantHash = "3ddf8f3dfbc05e77c908792f658619334332f099b3563d3f7b8e9117af6564c4"
+	const wantVersion = 5
+	const wantHash = "407b7dfed84e942120ab72e084cf77b600d030c52e3f27fd335314483806e884"
 
 	episodic, _ := buildTestFeed(t)
 	serial, err := feedrss.Build(feedrss.FeedOptions{

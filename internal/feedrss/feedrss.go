@@ -29,7 +29,7 @@ const githubRepo = "Stephan5/podcastinator"
 // Build's output: feeds built before the change then count as out of date,
 // and publish refuses them until they're rebuilt. TestFormatVersion fails
 // until it's bumped.
-const FormatVersion = 4
+const FormatVersion = 5
 
 // DefaultConcurrency is how many Content-Length lookups Build makes at once
 // when FeedOptions.Concurrency isn't set.
@@ -124,7 +124,6 @@ var rssTemplate = template.Must(template.New("rss").Funcs(template.FuncMap{
     <itunes:type>{{.Type}}</itunes:type>
     {{- end}}
     <language>en-gb</language>
-    <copyright>none</copyright>
     <link>{{xmlEscape .WebsiteURL}}</link>
     <itunes:image href="{{xmlEscapeAttr .ImageURL}}"/>
     <image>
