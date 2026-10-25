@@ -76,6 +76,7 @@ Episodes are numbered in CSV order. The `guid` is what podcast apps identify an 
 | `feed`        | No       | The feed's own URL, its self link. Defaults to `<public_url>/<slug>/feed.xml`, from `hosting.json`. |
 | `delimiter`   | No       | The CSV's field separator. Defaults to the unit separator, `"\u001f"`.                           |
 | `source`      | No       | The RSS feed the episodes came from, which `update` fetches new ones from. Set by `import`.    |
+| `type`        | No       | `"serial"` for a show meant to be heard in order, which apps that honour `itunes:type` (Apple Podcasts does) list oldest first. Defaults to episodic, newest first. |
 
 ## Hosting
 
@@ -252,7 +253,7 @@ podcastinator build example-show another-show     # just these
 podcastinator build --exclude some-feed,another   # all but these
 ```
 
-Writes `feed/<slug>/feed.xml` from its `feed.csv` and `feed.json`. The feed and image URLs come from `feed` and `image` in `feed.json`, then their location in the bucket from `hosting.json`, and it fails if neither supplies them. Gives any episode without a GUID one, writing it to the CSV. Sends a `HEAD` request for each episode to fill in its length, 16 at a time by default; `--concurrency` changes that. Skips writing if the feed hasn't changed. Each `feed.xml` ends with a comment holding a hash of its inputs, which `publish` and `status` check.
+Writes `feed/<slug>/feed.xml` from its `feed.csv` and `feed.json`. The feed and image URLs come from `feed` and `image` in `feed.json`, then their location in the bucket from `hosting.json`, and it fails if neither supplies them. Gives any episode without a GUID one, writing it to the CSV. Numbers each episode with `itunes:episode`, in CSV order, matching the `N:` in its title. Sends a `HEAD` request for each episode to fill in its length, 16 at a time by default; `--concurrency` changes that. Skips writing if the feed hasn't changed. Each `feed.xml` ends with a comment holding a hash of its inputs, which `publish` and `status` check.
 
 ### `dates` — reformat dates
 

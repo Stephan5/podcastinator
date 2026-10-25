@@ -115,6 +115,7 @@ func buildFeed(feedDirAbs string, f feed, concurrency int) error {
 		ImageURL:    imageURL,
 		FeedURL:     feedURL,
 		RepoDir:     f.slug,
+		Type:        f.cfg.Type,
 		InputsHash:  hash,
 		Concurrency: concurrency,
 	}

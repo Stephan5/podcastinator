@@ -42,6 +42,10 @@ type FeedOptions struct {
 	FeedURL     string
 	RepoDir     string // subdirectory name under feed/
 
+	// Type is the show's itunes:type, "episodic" or "serial"; empty leaves
+	// it out, which apps treat as episodic.
+	Type string
+
 	// InputsHash, if set, is stamped into the feed (see StampInputs) so
 	// publish can tell whether feed.xml is up to date with its inputs.
 	InputsHash string
@@ -108,6 +112,9 @@ var rssTemplate = template.Must(template.New("rss").Funcs(template.FuncMap{
     {{- if .Author}}
     <itunes:author>{{xmlEscape .Author}}</itunes:author>
     {{- end}}
+    {{- if .Type}}
+    <itunes:type>{{.Type}}</itunes:type>
+    {{- end}}
     <language>en-gb</language>
     <copyright>none</copyright>
     <link>{{xmlEscape .WebsiteURL}}</link>
@@ -124,6 +131,7 @@ var rssTemplate = template.Must(template.New("rss").Funcs(template.FuncMap{
       <link>{{xmlEscapeAttr .Link}}</link>
       <guid{{if not .PermaLink}} isPermaLink="false"{{end}}>{{xmlEscapeAttr .GUID}}</guid>
       <title>{{xmlEscape .Title}}</title>
+      <itunes:episode>{{.Number}}</itunes:episode>
       <description>{{.Description}}</description>
       <pubDate>{{.PubDate}}</pubDate>
       <enclosure url="{{xmlEscapeAttr .Link}}" length="{{.Length}}" type="{{.MimeType}}"/>
@@ -145,11 +153,13 @@ type rssTemplateData struct {
 	FeedURL     string
 	Repo        string
 	BuildDate   string
+	Type        string
 	InputsHash  string
 	Items       []rssItem
 }
 
 type rssItem struct {
+	Number      int
 	Title       string
 	Description string
 	PubDate     string
@@ -250,6 +260,7 @@ func Build(opts FeedOptions, records []feedcsv.Record, logger io.Writer) ([]byte
 		permaLink := strings.HasPrefix(guid, "http://") || strings.HasPrefix(guid, "https://")
 
 		items = append(items, rssItem{
+			Number:      num,
 			Title:       fmt.Sprintf("%d: %s", num, rec.Title),
 			Description: desc,
 			PubDate:     rec.Date,
@@ -271,6 +282,7 @@ func Build(opts FeedOptions, records []feedcsv.Record, logger io.Writer) ([]byte
 		FeedURL:     opts.FeedURL,
 		Repo:        githubRepo,
 		BuildDate:   buildDate,
+		Type:        opts.Type,
 		InputsHash:  opts.InputsHash,
 		Items:       items,
 	}

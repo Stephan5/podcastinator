@@ -308,6 +308,39 @@ func TestBuildUsesHostingURLs(t *testing.T) {
 	}
 }
 
+// TestBuildSerialFeed checks "type": "serial" in feed.json makes a feed that
+// apps list oldest first, and that a mistyped type is caught.
+func TestBuildSerialFeed(t *testing.T) {
+	audio := audioServer(t)
+	feedRoot := t.TempDir()
+	writeHosting(t, feedRoot)
+	dir := writeFeed(t, feedRoot, "serial-show", `{"title":"Serial Show","type":"serial"}`,
+		episode("Ep1", "Sat, 29 Jun 2002 03:00:00 GMT", audio+"/ep1.mp3"),
+		episode("Ep2", "Sat, 06 Jul 2002 03:00:00 GMT", audio+"/ep2.mp3"))
+
+	out, code := run("build", "serial-show", "--feed-dir", feedRoot)
+	if code != 0 {
+		t.Fatalf("build exited %d:\n%s", code, out)
+	}
+	xml, _ := os.ReadFile(filepath.Join(dir, "feed.xml"))
+	for _, want := range []string{
+		"<itunes:type>serial</itunes:type>",
+		"<title>1: Ep1</title>\n      <itunes:episode>1</itunes:episode>",
+		"<title>2: Ep2</title>\n      <itunes:episode>2</itunes:episode>",
+	} {
+		if !strings.Contains(string(xml), want) {
+			t.Errorf("expected %q in feed.xml:\n%s", want, xml)
+		}
+	}
+	assertWellFormed(t, filepath.Join(dir, "feed.xml"))
+
+	os.WriteFile(filepath.Join(dir, "feed.json"), []byte(`{"title":"Serial Show","type":"sequential"}`), 0644)
+	out, code = run("build", "serial-show", "--feed-dir", feedRoot)
+	if code == 0 || !strings.Contains(out, `"type" must be "episodic" or "serial"`) {
+		t.Errorf("expected build to reject an unknown type, exit %d:\n%s", code, out)
+	}
+}
+
 // TestBuildAllFeeds verifies that build with no feeds named builds every
 // feed directory with a feed.json, and ignores directories without one.
 func TestBuildAllFeeds(t *testing.T) {
