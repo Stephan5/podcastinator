@@ -82,8 +82,8 @@ VERSION := $(shell sed -n 's/^const version = "\(.*\)"$$/\1/p' cmd/podcastinator
 
 # Prepares release V (make cut V=0.10.0) on master: sets the version in
 # version.go, points the README's go install lines at it and heads the release
-# notes' Unreleased section with it, then commits that as "cut vV". Push it,
-# then run make release.
+# notes' Unreleased section with it, then commits that as "cut vV" and shows
+# it. Push it, then run make release.
 .PHONY: cut
 cut:
 	@echo "$(V)" | grep -qxE '[0-9]+\.[0-9]+\.[0-9]+' || { echo "Usage: make cut V=<major>.<minor>.<patch>" >&2; exit 1; }
@@ -99,7 +99,7 @@ cut:
 	sed -i.bak 's/^## Unreleased$$/## $(V)/' RELEASE_NOTES.md
 	@rm cmd/podcastinator/version.go.bak README.md.bak RELEASE_NOTES.md.bak
 	git commit -q -m "cut v$(V)" cmd/podcastinator/version.go README.md RELEASE_NOTES.md
-	@echo "Committed \"cut v$(V)\". Check it with git show, then git push and make release."
+	git show
 
 # Tags master with the version in version.go and pushes the tag, which runs the
 # release workflow. It first checks what the workflow would refuse, so a bad tag
@@ -141,7 +141,7 @@ help:
 	@echo "  lint               Run fmt + vet"
 	@echo ""
 	@echo "Release:"
-	@echo "  cut V=x.y.z        Set the version, README and release notes for V and commit"
+	@echo "  cut V=x.y.z        Set the version, README and release notes for V, commit and show it"
 	@echo "  release            Tag master with the version in version.go and push the tag"
 	@echo ""
 	@echo "Other:"
