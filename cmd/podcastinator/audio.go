@@ -25,7 +25,7 @@ func newAudioCmd() *cobra.Command {
 		Long: `Moves a feed's episode audio in and out of the bucket in hosting.json.
 
 These need AWS credentials that can write audio to the bucket, unlike publish,
-which only writes feeds, cover art and the index.`,
+which only writes feeds and cover art.`,
 	}
 	cmd.AddCommand(newAudioUploadCmd(), newAudioPruneCmd(), newAudioDownloadCmd())
 	return cmd

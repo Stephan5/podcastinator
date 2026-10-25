@@ -26,7 +26,7 @@ type Config struct {
 	// Prefix is an optional S3 key prefix (no leading/trailing slash).
 	Prefix string `json:"prefix,omitempty"`
 	// PublicURL is the base URL that serves the bucket root, used for
-	// everything in it: feeds, cover art, the index files and episode audio.
+	// everything in it: feeds, cover art and episode audio.
 	// Defaults to the path-style S3 URL.
 	PublicURL string `json:"public_url,omitempty"`
 }
@@ -63,7 +63,7 @@ func (c *Config) Normalize() {
 }
 
 // Key returns the S3 key for a path under the prefix,
-// e.g. Key("example-show/feed.xml") or Key("index.json").
+// e.g. Key("example-show/feed.xml").
 func (c *Config) Key(rel string) string {
 	if c.Prefix == "" {
 		return rel
