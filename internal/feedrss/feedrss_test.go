@@ -105,11 +105,23 @@ func TestBuildChannelMetadata(t *testing.T) {
 	assertContains(t, src, opts.WebsiteURL)
 	assertContains(t, src, "<language>en-gb</language>")
 	assertContains(t, src, "<copyright>none</copyright>")
-	assertContains(t, src, "Stephan5/podcastinator")
+	assertContains(t, src, "<generator>Stephan5/podcastinator</generator>")
 
-	// Channel description wraps the user description in HTML paragraph tags with single br (matches bash script)
-	assertContains(t, src, "&lt;p&gt;Hell yeah dude!")
-	assertContains(t, src, "&lt;br/&gt;&lt;p&gt;Generated using Stephan5/podcastinator.&lt;/p&gt;")
+	// The show's description goes in as it is, in itunes:summary too, which
+	// some apps read instead.
+	assertContains(t, src, "\n    <description>Hell yeah dude!</description>\n    <itunes:summary>Hell yeah dude!</itunes:summary>\n")
+}
+
+func TestBuildChannelDescriptionDefaultsToTitle(t *testing.T) {
+	xmlBytes, err := feedrss.Build(feedrss.FeedOptions{
+		Title:    "Bill & Ben",
+		FeedURL:  "https://podcasts.example.com/bb/feed.xml",
+		ImageURL: "https://podcasts.example.com/bb/image.jpg",
+	}, nil, io.Discard)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	assertContains(t, string(xmlBytes), "<description>Bill &amp; Ben</description>\n    <itunes:summary>Bill &amp; Ben</itunes:summary>")
 }
 
 func TestBuildLastBuildDateIsRFC2822(t *testing.T) {
@@ -334,21 +346,30 @@ func TestBuildValidatesDatesBeforeFetching(t *testing.T) {
 	}
 }
 
-func TestBuildDefaultDescriptionFallback(t *testing.T) {
+// TestBuildEpisodeDescriptions checks an episode's description goes in as it
+// is, and one without a description has none, rather than one made up from
+// its title and number, which apps show already.
+func TestBuildEpisodeDescriptions(t *testing.T) {
 	xmlBytes, _ := buildTestFeed(t)
 	src := string(xmlBytes)
-	// item 1 has no description → fallback "2002-06-29 - Episode 1 of Dudes Rock"
-	assertContains(t, src, "2002-06-29 - Episode 1 of Dudes Rock")
-	// item 4 (Inaugral Business) also has no description
-	assertContains(t, src, "Inaugral Business - Episode 4 of Dudes Rock")
-}
 
-func TestBuildGeneratedUsingLink(t *testing.T) {
-	xmlBytes, _ := buildTestFeed(t)
-	src := string(xmlBytes)
-	// Every item description should contain the "Generated using" link
-	assertContains(t, src, `href="https://github.com/Stephan5/podcastinator"`)
-	assertContains(t, src, "Generated using Stephan5/podcastinator")
+	items := regexp.MustCompile(`(?s)<item>.*?</item>`).FindAllString(src, -1)
+	if len(items) != len(testRecords) {
+		t.Fatalf("got %d items; want %d", len(items), len(testRecords))
+	}
+	for i, item := range items {
+		want := testRecords[i].Description
+		got := regexp.MustCompile(`(?s)<description>(.*?)</description>`).FindStringSubmatch(item)
+		switch {
+		case want == "" && got != nil:
+			t.Errorf("item %d has no description in the CSV, but got %q", i+1, got[1])
+		case want != "" && (got == nil || got[1] != want):
+			t.Errorf("item %d description = %v; want %q", i+1, got, want)
+		}
+	}
+	if strings.Contains(src, "Generated using") {
+		t.Error("the feed shouldn't credit podcastinator anywhere listeners see; <generator> does that")
+	}
 }
 
 func TestSetDefaultsOnlyFillsWebsiteURL(t *testing.T) {
@@ -896,6 +917,32 @@ func TestImageChildIndentation(t *testing.T) {
 	}
 }
 
+// TestBuildItunesImage checks the cover art is in itunes:image, which Apple
+// requires and apps look for first, as well as RSS's own <image>.
+func TestBuildItunesImage(t *testing.T) {
+	const art = "https://podcasts.example.com/test/image.jpg?v=2&size=full"
+	xmlBytes, err := feedrss.Build(feedrss.FeedOptions{
+		Title:    "Test",
+		FeedURL:  "https://podcasts.example.com/test/feed.xml",
+		ImageURL: art,
+	}, nil, io.Discard)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	src := string(xmlBytes)
+	assertContains(t, src, "\n    <itunes:image href=\"https://podcasts.example.com/test/image.jpg?v=2&amp;size=full\"/>\n    <image>\n      <url>")
+	if err := xml.Unmarshal(xmlBytes, new(struct{})); err != nil {
+		t.Errorf("feed isn't valid XML: %v", err)
+	}
+	parsed, err := feedrss.Parse(bytes.NewReader(xmlBytes))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if parsed.ImageURL != art {
+		t.Errorf("parsed ImageURL = %q; want %q", parsed.ImageURL, art)
+	}
+}
+
 // extractTitles is a debug helper that pulls all <title>...</title> lines from XML.
 func extractTitles(src string) string {
 	var out strings.Builder
@@ -980,8 +1027,8 @@ func TestStampedInputs(t *testing.T) {
 // bumped and feeds built by an older version count as stale. If the change is
 // deliberate, bump FormatVersion and set both constants here to the new values.
 func TestFormatVersion(t *testing.T) {
-	const wantVersion = 1
-	const wantHash = "31a192915d59b3cc178354a793d34502d89cfaaf0379e95803fc45cba067973f"
+	const wantVersion = 4
+	const wantHash = "26840a4c15e397a5784e7304b5b5237cb7cc573df1a558edf6f5998d58d31740"
 
 	episodic, _ := buildTestFeed(t)
 	serial, err := feedrss.Build(feedrss.FeedOptions{
@@ -993,7 +1040,7 @@ func TestFormatVersion(t *testing.T) {
 		ContentLengthFetcher: mockFetcher("1"),
 	}, []feedcsv.Record{
 		{Title: "Legacy", Date: "Sat, 29 Jun 2002 03:00:00 GMT", URL: "https://example.com/new/1.mp3", GUID: "https://example.com/old/1.mp3"},
-		{Title: "New", Date: "Sun, 30 Jun 2002 03:00:00 GMT", URL: "https://example.com/2.mp3", GUID: "6f1c1e0a-3b5d-4c2e-9f7a-2d8b4e6a1c3f"},
+		{Title: "New", Date: "Sun, 30 Jun 2002 03:00:00 GMT", URL: "https://example.com/2.mp3", GUID: "6f1c1e0a-3b5d-4c2e-9f7a-2d8b4e6a1c3f", Duration: "1:02:03"},
 	}, io.Discard)
 	if err != nil {
 		t.Fatalf("Build: %v", err)
@@ -1079,4 +1126,75 @@ func TestBuildItunesTypeAndEpisodeNumbers(t *testing.T) {
 		}
 	}
 	assertContains(t, src, "<title>2002-06-29</title>\n      <itunes:episode>1</itunes:episode>")
+}
+
+func TestBuildDurations(t *testing.T) {
+	opts := feedrss.FeedOptions{
+		Title:                "Test",
+		FeedURL:              "https://podcasts.example.com/test/feed.xml",
+		ImageURL:             "https://podcasts.example.com/test/image.jpg",
+		ContentLengthFetcher: mockFetcher("1"),
+	}
+	records := []feedcsv.Record{
+		{Title: "Seconds", Date: "Sat, 29 Jun 2002 03:00:00 GMT", URL: "https://example.com/1.mp3", Duration: "95"},
+		{Title: "Clock", Date: "Sun, 30 Jun 2002 03:00:00 GMT", URL: "https://example.com/2.mp3", Duration: "1:02:03"},
+		{Title: "Unknown", Date: "Mon, 01 Jul 2002 03:00:00 GMT", URL: "https://example.com/3.mp3"},
+	}
+	xmlBytes, err := feedrss.Build(opts, records, io.Discard)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	src := string(xmlBytes)
+	// Written as seconds, whichever form the CSV has, and left out when unknown.
+	assertContains(t, src, "<itunes:episode>1</itunes:episode>\n      <itunes:duration>95</itunes:duration>\n")
+	assertContains(t, src, "<itunes:episode>2</itunes:episode>\n      <itunes:duration>3723</itunes:duration>\n")
+	assertContains(t, src, "<itunes:episode>3</itunes:episode>\n      <pubDate>")
+	if err := xml.Unmarshal(xmlBytes, new(struct{})); err != nil {
+		t.Errorf("feed isn't valid XML: %v", err)
+	}
+
+	// It reads back as seconds.
+	parsed, err := feedrss.Parse(bytes.NewReader(xmlBytes))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	for i, want := range []string{"95", "3723", ""} {
+		if parsed.Records[i].Duration != want {
+			t.Errorf("parsed record %d Duration = %q; want %q", i, parsed.Records[i].Duration, want)
+		}
+	}
+
+	// A duration that doesn't parse fails the build before any requests.
+	records[2].Duration = "an hour"
+	opts.ContentLengthFetcher = func(string) (string, error) {
+		t.Error("fetched a Content-Length despite a bad duration")
+		return "1", nil
+	}
+	if _, err := feedrss.Build(opts, records, io.Discard); err == nil || !strings.Contains(err.Error(), `item 3 ("Unknown"): invalid duration "an hour"`) {
+		t.Errorf("Build with a bad duration: err = %v", err)
+	}
+}
+
+func TestParseDurations(t *testing.T) {
+	const src = `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd">
+  <channel>
+    <title>Show</title>
+    <item><title>A</title><pubDate>Sat, 29 Jun 2002 03:00:00 GMT</pubDate><itunes:duration>01:02:03</itunes:duration><enclosure url="https://example.com/a.mp3"/></item>
+    <item><title>B</title><pubDate>Sun, 30 Jun 2002 03:00:00 GMT</pubDate><itunes:duration>612.6</itunes:duration><enclosure url="https://example.com/b.mp3"/></item>
+    <item><title>C</title><pubDate>Mon, 01 Jul 2002 03:00:00 GMT</pubDate><itunes:duration>about an hour</itunes:duration><enclosure url="https://example.com/c.mp3"/></item>
+    <item><title>D</title><pubDate>Tue, 02 Jul 2002 03:00:00 GMT</pubDate><enclosure url="https://example.com/d.mp3"/></item>
+  </channel>
+</rss>`
+
+	feed, err := feedrss.Parse(strings.NewReader(src))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	// Seconds, whatever form the feed used; one that doesn't parse is dropped.
+	for i, want := range []string{"3723", "613", "", ""} {
+		if feed.Records[i].Duration != want {
+			t.Errorf("record %d (%s) Duration = %q; want %q", i, feed.Records[i].Title, feed.Records[i].Duration, want)
+		}
+	}
 }

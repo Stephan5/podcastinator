@@ -25,6 +25,7 @@ macOS blocks binaries downloaded from the internet that aren't signed. Clear the
 podcastinator init --bucket my-podcast-bucket --public-url https://podcasts.example.com
 podcastinator import https://example.com/podcast.rss   # creates feed/<show>/
 podcastinator audio upload <show>                       # optional: host the audio too
+podcastinator durations                                 # optional: episode lengths, with ffprobe
 podcastinator build                                     # builds feed/<show>/feed.xml
 podcastinator publish                                   # subscribe at <public_url>/<show>/feed.xml
 ```
@@ -51,9 +52,11 @@ podcastinator publish
 
 ### The CSV
 
-Columns are `title`, `description`, `date`, `url`, `guid`, separated by the ASCII unit separator (`\x1F`) by default so titles and descriptions can contain commas and quotes without escaping. There's no quoting at all. Descriptions are stored HTML-escaped (`&lt;p&gt;`), as they go into the feed verbatim. Dates must be RFC 2822 (`Mon, 06 Jan 2025 09:00:00 GMT`); `dates` converts other formats. An empty description becomes `<title> - Episode <n> of <show>`. Every description ends with a "Generated using Stephan5/podcastinator" link.
+Columns are `title`, `description`, `date`, `url`, `guid`, `duration`, separated by the ASCII unit separator (`\x1F`) by default so titles and descriptions can contain commas and quotes without escaping. There's no quoting at all. Descriptions are stored HTML-escaped (`&lt;p&gt;`), as they go into the feed verbatim. Dates must be RFC 2822 (`Mon, 06 Jan 2025 09:00:00 GMT`); `dates` converts other formats. An episode with an empty description has none in the feed.
 
 Episodes are numbered in CSV order. The `guid` is what podcast apps identify an episode by, so it must never change. Leave it empty on a new row and `build` fills it in with a UUID; after that, the episode's URL can change (say, when `audio upload` moves it into your bucket) without apps seeing it as new. CSVs without the column still work, and `build` adds it. Episodes already published before the column existed keep their URL as their GUID, taken from the existing `feed.xml`, so subscribers don't see them again.
+
+`duration` is the episode's length in seconds (`HH:MM:SS` works too), which `build` writes out as `itunes:duration` so apps can show how long an episode is before downloading it. Leave it empty if you don't know it: `durations` fills it in, and `import` and `update` copy it from the source feed.
 
 ### `feed.json`
 
@@ -69,10 +72,10 @@ Episodes are numbered in CSV order. The `guid` is what podcast apps identify an 
 | Key           | Required | What it is                                                                                     |
 |---------------|----------|------------------------------------------------------------------------------------------------|
 | `title`       | Yes      | The show's name.                                                                               |
-| `description` | No       | The show's description.                                                                        |
+| `description` | No       | The show's description, written as `<description>` and `<itunes:summary>`. Defaults to the title. |
 | `author`      | No       | Who makes it.                                                                                  |
 | `website`     | No       | The show's own site, the feed's `<link>`. Defaults to this repo.                               |
-| `image`       | No       | The cover art's URL. Defaults to `<public_url>/<slug>/image.jpg`, from `hosting.json`.         |
+| `image`       | No       | The cover art's URL, written as `<itunes:image>` and `<image>`. Defaults to `<public_url>/<slug>/image.jpg`, from `hosting.json`. |
 | `feed`        | No       | The feed's own URL, its self link. Defaults to `<public_url>/<slug>/feed.xml`, from `hosting.json`. |
 | `delimiter`   | No       | The CSV's field separator. Defaults to the unit separator, `"\u001f"`.                           |
 | `source`      | No       | The RSS feed the episodes came from, which `update` fetches new ones from. Set by `import`.    |
@@ -240,6 +243,7 @@ Give the role an inline policy that can only touch the feed files, so a bad push
 |           | `update [feed...]`                           | Adds new episodes from each feed's `source`                           |
 | Generate  | `build [feed...] [--exclude a,b] [--concurrency n]` | Builds `feed.xml` from `feed.csv` and `feed.json`                     |
 |           | `dates <feed> --from <format>`               | Rewrites a hand-written CSV's dates as RFC 2822                       |
+|           | `durations [feed...] [--concurrency n]`      | Fills in episode durations with ffprobe                               |
 | Self-host | `audio upload <feed>`                        | Copies a feed's episodes into the bucket and points its CSV at them   |
 |           | `audio prune <feed> [--delete]`              | Finds audio in the bucket the CSV no longer points at                 |
 |           | `audio download <feed> <dir>`                | Downloads a feed's episodes for safekeeping                           |
@@ -255,7 +259,7 @@ podcastinator import https://example.com/podcast.rss
 podcastinator import ~/Downloads/show.xml --slug my-show
 ```
 
-Fetches the feed and writes `feed/<slug>/feed.csv` (oldest episode first), `feed.json` (title, description, author, website and `source`) and `image.jpg`, preferring `itunes:image` and converting PNGs to JPEG. Every episode gets a new UUID as its GUID. The slug comes from the show's title unless `--slug` says otherwise. It won't overwrite an existing feed without `--force`, which gives every episode a new GUID, so subscribers would see them all again.
+Fetches the feed and writes `feed/<slug>/feed.csv` (oldest episode first, with durations where the source has them), `feed.json` (title, description, author, website and `source`) and `image.jpg`, preferring `itunes:image` and converting PNGs to JPEG. Every episode gets a new UUID as its GUID. The slug comes from the show's title unless `--slug` says otherwise. It won't overwrite an existing feed without `--force`, which gives every episode a new GUID, so subscribers would see them all again.
 
 ### `update` — pick up new episodes
 
@@ -274,7 +278,7 @@ podcastinator build example-show another-show     # just these
 podcastinator build --exclude some-feed,another   # all but these
 ```
 
-Writes `feed/<slug>/feed.xml` from its `feed.csv` and `feed.json`. The feed and image URLs come from `feed` and `image` in `feed.json`, then their location in the bucket from `hosting.json`, and it fails if neither supplies them. Gives any episode without a GUID one, writing it to the CSV. Numbers each episode with `itunes:episode`, in CSV order; titles are left as they are in the CSV. Sends a `HEAD` request for each episode to fill in its length, 16 at a time by default; `--concurrency` changes that. Skips writing if the feed hasn't changed. Each `feed.xml` ends with a comment holding a hash of its inputs and of the version of build's output format, which `publish` and `status` check; a release that changes what `build` writes bumps that format version, so feeds need rebuilding after upgrading to it.
+Writes `feed/<slug>/feed.xml` from its `feed.csv` and `feed.json`. The feed and image URLs come from `feed` and `image` in `feed.json`, then their location in the bucket from `hosting.json`, and it fails if neither supplies them. Gives any episode without a GUID one, writing it to the CSV. Numbers each episode with `itunes:episode`, in CSV order; titles are left as they are in the CSV. Episodes with a `duration` get an `itunes:duration`, in seconds. Sends a `HEAD` request for each episode to fill in its length, 16 at a time by default; `--concurrency` changes that. Skips writing if the feed hasn't changed. Each `feed.xml` ends with a comment holding a hash of its inputs and of the version of build's output format, which `publish` and `status` check; a release that changes what `build` writes bumps that format version, so feeds need rebuilding after upgrading to it.
 
 ### `dates` — reformat dates
 
@@ -283,6 +287,15 @@ podcastinator dates example-show --from "%b %d, %Y"
 ```
 
 Parses the CSV's date column with a strftime format and rewrites it as RFC 2822. Backs up the original to `feed.csv.old`.
+
+### `durations` — episode lengths
+
+```shell
+podcastinator durations                  # every feed
+podcastinator durations example-show     # just this one
+```
+
+Runs `ffprobe` on each episode without a `duration` and writes the length it finds, in seconds, to the CSV. It needs [ffmpeg](https://ffmpeg.org/download.html) installed (`brew install ffmpeg`), but only where you run it: `build` and `publish` don't. `ffprobe` only reads as much of each file as it needs, so it doesn't download whole episodes. Probes 8 episodes at a time; `--concurrency` changes that. Episodes it can't probe are listed and left empty, and the rest are still written, so run it again once they're fixed. `file://` URLs are relative to the feed directory, as with `audio upload`. Run `build` afterwards.
 
 ### `audio upload` — copy episodes into the bucket
 

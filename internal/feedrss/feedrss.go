@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/Stephan5/podcastinator/internal/dateutil"
+	"github.com/Stephan5/podcastinator/internal/durationutil"
 	"github.com/Stephan5/podcastinator/internal/feedcsv"
 	"github.com/Stephan5/podcastinator/internal/urlutil"
 )
@@ -29,7 +30,7 @@ const githubRepo = "Stephan5/podcastinator"
 // Build's output: feeds built before the change then count as out of date,
 // and publish refuses them until they're rebuilt. TestFormatVersion fails
 // until it's bumped.
-const FormatVersion = 1
+const FormatVersion = 4
 
 // DefaultConcurrency is how many Content-Length lookups Build makes at once
 // when FeedOptions.Concurrency isn't set.
@@ -115,7 +116,8 @@ var rssTemplate = template.Must(template.New("rss").Funcs(template.FuncMap{
   <channel>
     <atom:link href="{{xmlEscapeAttr .FeedURL}}" rel="self" type="application/rss+xml"/>
     <title>{{xmlEscape .Title}}</title>
-    <description>&lt;p&gt;{{xmlEscape .Description}} &lt;/p&gt;&lt;br/&gt;&lt;p&gt;Generated using {{.Repo}}.&lt;/p&gt;</description>
+    <description>{{xmlEscape .Description}}</description>
+    <itunes:summary>{{xmlEscape .Description}}</itunes:summary>
     {{- if .Author}}
     <itunes:author>{{xmlEscape .Author}}</itunes:author>
     {{- end}}
@@ -125,6 +127,7 @@ var rssTemplate = template.Must(template.New("rss").Funcs(template.FuncMap{
     <language>en-gb</language>
     <copyright>none</copyright>
     <link>{{xmlEscape .WebsiteURL}}</link>
+    <itunes:image href="{{xmlEscapeAttr .ImageURL}}"/>
     <image>
       <url>{{xmlEscape .ImageURL}}</url>
       <title>{{xmlEscape .Title}}</title>
@@ -139,7 +142,12 @@ var rssTemplate = template.Must(template.New("rss").Funcs(template.FuncMap{
       <guid{{if not .PermaLink}} isPermaLink="false"{{end}}>{{xmlEscapeAttr .GUID}}</guid>
       <title>{{xmlEscape .Title}}</title>
       <itunes:episode>{{.Number}}</itunes:episode>
+      {{- if .Duration}}
+      <itunes:duration>{{.Duration}}</itunes:duration>
+      {{- end}}
+      {{- if .Description}}
       <description>{{.Description}}</description>
+      {{- end}}
       <pubDate>{{.PubDate}}</pubDate>
       <enclosure url="{{xmlEscapeAttr .Link}}" length="{{.Length}}" type="{{.MimeType}}"/>
     </item>
@@ -167,6 +175,7 @@ type rssTemplateData struct {
 
 type rssItem struct {
 	Number      int
+	Duration    string // whole seconds; empty leaves itunes:duration out
 	Title       string
 	Description string
 	PubDate     string
@@ -187,7 +196,6 @@ func Build(opts FeedOptions, records []feedcsv.Record, logger io.Writer) ([]byte
 		return nil, fmt.Errorf("feed URL and image URL are required")
 	}
 
-	repoLink := fmt.Sprintf("https://github.com/%s", githubRepo)
 	buildDate := time.Now().UTC().Format("Mon, 02 Jan 2006 15:04:05 GMT")
 
 	// Use injected fetcher or fall back to real HTTP HEAD.
@@ -198,10 +206,18 @@ func Build(opts FeedOptions, records []feedcsv.Record, logger io.Writer) ([]byte
 
 	// Check every record before making any requests, so bad data fails fast.
 	encodedURLs := make([]string, len(records))
+	durations := make([]string, len(records))
 	for i, rec := range records {
 		num := i + 1
 		if err := dateutil.ValidateRFC2822(rec.Date); err != nil {
 			return nil, fmt.Errorf("item %d (%q): %w", num, rec.Title, err)
+		}
+		if rec.Duration != "" {
+			secs, err := durationutil.Parse(rec.Duration)
+			if err != nil {
+				return nil, fmt.Errorf("item %d (%q): %w", num, rec.Title, err)
+			}
+			durations[i] = fmt.Sprint(secs)
 		}
 		encodedURL, err := urlutil.Encode(rec.URL)
 		if err != nil {
@@ -238,17 +254,6 @@ func Build(opts FeedOptions, records []feedcsv.Record, logger io.Writer) ([]byte
 		htmlURL := urlutil.HTMLEscape(encodedURL)
 		fmt.Fprintf(logger, "HTML encoded URL: %s\n", htmlURL)
 
-		// Build description — apply xmlEscapeText to both titles so any
-		// raw & (e.g. from "Bill & Ben") becomes &amp; in the XML.
-		desc := rec.Description
-		if desc == "" {
-			desc = fmt.Sprintf("%s - Episode %d of %s",
-				xmlEscapeText(rec.Title), num, xmlEscapeText(opts.Title))
-		}
-		// Append "Generated using" link using literal HTML (not Go %q quoting)
-		desc = fmt.Sprintf(`%s &lt;br/&gt;&lt;br/&gt;&lt;a href="%s" rel="nofollow noopener" target="_blank"&gt;Generated using %s&lt;/a&gt;`,
-			desc, repoLink, githubRepo)
-
 		// Detect MIME type
 		cleanURL := urlutil.StripQuery(encodedURL)
 		ext := ""
@@ -268,8 +273,9 @@ func Build(opts FeedOptions, records []feedcsv.Record, logger io.Writer) ([]byte
 
 		items = append(items, rssItem{
 			Number:      num,
+			Duration:    durations[i],
 			Title:       rec.Title,
-			Description: desc,
+			Description: rec.Description,
 			PubDate:     rec.Date,
 			Link:        htmlURL,
 			GUID:        guid,
@@ -280,9 +286,16 @@ func Build(opts FeedOptions, records []feedcsv.Record, logger io.Writer) ([]byte
 		fmt.Fprintln(logger)
 	}
 
+	// RSS requires a channel description, so a show without one gets its
+	// title. Apps show it as the show's notes.
+	description := opts.Description
+	if description == "" {
+		description = opts.Title
+	}
+
 	data := rssTemplateData{
 		Title:       opts.Title,
-		Description: opts.Description,
+		Description: description,
 		Author:      opts.Author,
 		WebsiteURL:  opts.WebsiteURL,
 		ImageURL:    opts.ImageURL,
@@ -415,6 +428,7 @@ type rssDocItem struct {
 	Description string       `xml:"description"`
 	PubDate     string       `xml:"pubDate"`
 	GUID        string       `xml:"guid"`
+	Duration    string       `xml:"http://www.itunes.com/dtds/podcast-1.0.dtd duration"`
 	Enclosure   rssEnclosure `xml:"enclosure"`
 }
 
@@ -487,6 +501,13 @@ func Parse(r io.Reader) (*ParsedFeed, error) {
 		// and import skips it.
 		decodedURL := urlutil.HTMLUnescape(item.Enclosure.URL)
 
+		// Stored as seconds, whichever form the feed used. One that doesn't
+		// parse is left out rather than failing the import.
+		duration := ""
+		if secs, err := durationutil.Parse(item.Duration); err == nil {
+			duration = fmt.Sprint(secs)
+		}
+
 		items = append(items, itemWithTime{
 			rec: feedcsv.Record{
 				Title:       item.Title,
@@ -494,6 +515,7 @@ func Parse(r io.Reader) (*ParsedFeed, error) {
 				Date:        item.PubDate,
 				URL:         decodedURL,
 				GUID:        strings.TrimSpace(item.GUID),
+				Duration:    duration,
 			},
 			t: t,
 		})

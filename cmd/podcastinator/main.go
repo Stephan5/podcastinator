@@ -41,6 +41,7 @@ func main() {
 		newUpdateCmd(),
 		newBuildCmd(),
 		newDatesCmd(),
+		newDurationsCmd(),
 		newAudioCmd(),
 		newPublishCmd(),
 		newStatusCmd(),

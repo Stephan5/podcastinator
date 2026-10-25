@@ -33,7 +33,8 @@ func newImportCmd() *cobra.Command {
 		Long: `Fetches a podcast's RSS feed (a URL or a local file) and creates a feed
 directory from it:
 
-  <feed>/feed.csv    every episode, oldest first
+  <feed>/feed.csv    every episode, oldest first, with durations where the
+                     source has them
   <feed>/feed.json   the show's title, description, author and website, and
                      the source, which update fetches new episodes from
   <feed>/image.jpg   the cover art (PNGs are converted to JPEG)
@@ -281,6 +282,7 @@ func cleanRecords(records []feedcsv.Record, delim rune) []feedcsv.Record {
 			Date:        clean(rec.Date),
 			URL:         rec.URL,
 			GUID:        newUUID(),
+			Duration:    rec.Duration,
 		})
 	}
 	return out
