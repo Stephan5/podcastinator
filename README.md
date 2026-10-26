@@ -8,7 +8,7 @@ It's handy for archiving shows that are disappearing, stitching together episode
 ## Install
 
 ```shell
-go install github.com/Stephan5/podcastinator/cmd/podcastinator@v0.13.0
+go install github.com/Stephan5/podcastinator/cmd/podcastinator@v0.14.0
 ```
 
 Or download a binary for Linux or macOS from the [latest release](https://github.com/Stephan5/podcastinator/releases/latest), or build from a clone, which writes `build/podcastinator`:
@@ -168,7 +168,7 @@ jobs:
         with:
           role-to-assume: ${{ vars.PUBLISH_ROLE_ARN }}
           aws-region: eu-west-2
-      - run: go install github.com/Stephan5/podcastinator/cmd/podcastinator@v0.13.0
+      - run: go install github.com/Stephan5/podcastinator/cmd/podcastinator@v0.14.0
       - run: podcastinator publish
 ```
 
