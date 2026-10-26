@@ -2,6 +2,12 @@
 
 Newest first. A release's description on GitHub is its section here.
 
+## Unreleased
+
+### Fixed
+
+* **`audio upload` no longer loses its progress when it fails.** It saved the CSV only after the last episode, so a dropped connection on episode 404 of 450 left the first 403 uploaded but still pointing at their source, and a rerun downloaded them all again. It now saves the CSV after each episode, tries a failed download up to three times, and points an episode whose file is already at its destination at it rather than downloading it again (unless its size differs from the source's), which also rescues runs that failed before this fix.
+
 ## 0.12.0
 
 ### Removed

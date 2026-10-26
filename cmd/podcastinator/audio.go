@@ -42,11 +42,12 @@ are under public_url from hosting.json.
   - already at its destination: skipped
   - at its destination, but by its S3 URL: pointed at its public URL
   - elsewhere in the bucket: moved
-  - a remote http(s) URL: downloaded and uploaded
+  - a remote http(s) URL: downloaded and uploaded, unless already uploaded
   - a local file:// URL (relative to the feed directory): uploaded
 
 Episodes keep their GUIDs, so subscribers don't see moved episodes as new.
-Run build afterwards.`,
+The CSV is saved after each episode, so a failed run can be resumed by
+running it again. Run build afterwards.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			feedDirAbs, err := resolveFeedDir()
@@ -94,7 +95,6 @@ func runAudioUpload(ctx context.Context, f feed, host *hosting.Config) error {
 		return err
 	}
 
-	updated := make([]feedcsv.Record, len(records))
 	for i, rec := range records {
 		num := i + 1
 		paddedNum := fmt.Sprintf("%0*d", paddingWidth, num)
@@ -154,12 +154,22 @@ func runAudioUpload(ctx context.Context, f feed, host *hosting.Config) error {
 			}
 
 		case isHTTPURL(srcURL):
-			fmt.Println("  → Remote URL, downloading and uploading to S3")
-			if err := s3util.ValidateURL(encodedSrc); err != nil {
+			srcSize, err := s3util.HeadSize(encodedSrc)
+			if err != nil {
 				return fmt.Errorf("validate src URL %s: %w", encodedSrc, err)
 			}
-			if err := s3Client.DownloadAndUpload(ctx, encodedSrc, bucket, dstKey, audioContentType(ext)); err != nil {
-				return fmt.Errorf("download+upload item %d: %w", num, err)
+			dstSize, err := s3Client.Size(ctx, bucket, dstKey)
+			if err != nil {
+				return err
+			}
+			// Uploaded by an earlier run that stopped before rewriting the CSV.
+			if dstSize > 0 && (srcSize < 0 || srcSize == dstSize) {
+				fmt.Println("  → Remote URL, already uploaded to S3. Pointing at it.")
+			} else {
+				fmt.Println("  → Remote URL, downloading and uploading to S3")
+				if err := s3Client.DownloadAndUpload(ctx, encodedSrc, bucket, dstKey, audioContentType(ext)); err != nil {
+					return fmt.Errorf("download+upload item %d: %w", num, err)
+				}
 			}
 			if err := s3util.ValidateURL(httpDstURL); err != nil {
 				return fmt.Errorf("validate dst URL after upload: %w", err)
@@ -184,16 +194,18 @@ func runAudioUpload(ctx context.Context, f feed, host *hosting.Config) error {
 			return fmt.Errorf("item %d: unknown URL scheme: %q", num, srcURL)
 		}
 
-		rec.URL = newURL
-		updated[i] = rec
 		fmt.Printf("  → New URL: %q\n\n", newURL)
+		if newURL == srcURL {
+			continue
+		}
+		// Saved after every episode, so a run that fails partway keeps what it uploaded.
+		records[i].URL = newURL
+		if err := feedcsv.Write(f.csvPath(), f.cfg.DelimiterRune(), records); err != nil {
+			return fmt.Errorf("write updated CSV: %w", err)
+		}
 	}
 
-	if err := feedcsv.Write(f.csvPath(), f.cfg.DelimiterRune(), updated); err != nil {
-		return fmt.Errorf("write updated CSV: %w", err)
-	}
-
-	for _, rec := range updated {
+	for _, rec := range records {
 		if isHTTPURL(rec.URL) && !strings.HasPrefix(rec.URL, baseHTTPDst) {
 			fmt.Printf("Warning: not fully self-hosted: %q\n", rec.URL)
 		}
