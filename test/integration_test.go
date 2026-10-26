@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -1195,6 +1196,88 @@ func TestAudioPruneRecognisesPublicURLs(t *testing.T) {
 	}
 	if !strings.Contains(out, "Found 1 orphaned") || !strings.Contains(out, "/show/stray.mp3") {
 		t.Errorf("expected only stray.mp3 to be an orphan:\n%s", out)
+	}
+}
+
+// TestAudioUploadResumes checks a failed upload keeps the episodes it
+// finished, a rerun doesn't download episodes already in the bucket, and a
+// download that drops partway is retried.
+func TestAudioUploadResumes(t *testing.T) {
+	bucket := s3TestBucket(t)
+	prefix := fmt.Sprintf("it-resume-%d", os.Getpid())
+	cdn := fakeCDN(t, bucket)
+
+	var (
+		mu    sync.Mutex
+		gets  []string
+		ep2OK bool
+		drops int
+	)
+	audio := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			mu.Lock()
+			gets = append(gets, r.URL.Path)
+			ok, dropped := ep2OK, drops
+			if r.URL.Path == "/ep2.mp3" && ok && dropped == 0 {
+				drops++
+			}
+			mu.Unlock()
+			if r.URL.Path == "/ep2.mp3" {
+				if !ok {
+					http.NotFound(w, r)
+					return
+				}
+				if dropped == 0 {
+					// Cut the connection partway through the body.
+					w.Header().Set("Content-Length", "103016")
+					w.Write(make([]byte, 1000)) //nolint:errcheck
+					w.(http.Flusher).Flush()
+					panic(http.ErrAbortHandler)
+				}
+			}
+		}
+		http.ServeFile(w, r, "testdata/test.mp3")
+	}))
+	defer audio.Close()
+
+	feedRoot := t.TempDir()
+	os.WriteFile(filepath.Join(feedRoot, "hosting.json"), []byte(fmt.Sprintf(
+		`{"bucket":%q,"region":"eu-west-2","prefix":%q,"public_url":%q}`, bucket, prefix, cdn.URL)), 0644)
+	dir := writeFeed(t, feedRoot, "show", `{"title":"Show"}`,
+		episode("Ep1", "Sat, 29 Jun 2002 03:00:00 GMT", audio.URL+"/ep1.mp3"),
+		episode("Ep2", "Sat, 06 Jul 2002 03:00:00 GMT", audio.URL+"/ep2.mp3"))
+	csvPath := filepath.Join(dir, "feed.csv")
+	ep1URL := cdn.URL + "/" + prefix + "/show/1-ep1.mp3"
+	ep2URL := cdn.URL + "/" + prefix + "/show/2-ep2.mp3"
+
+	out, code := run("audio", "upload", "show", "--feed-dir", feedRoot)
+	if code == 0 {
+		t.Fatalf("expected upload to fail on Ep2:\n%s", out)
+	}
+	csv, _ := os.ReadFile(csvPath)
+	if !strings.Contains(string(csv), "\x1f"+ep1URL+"\x1f") || !strings.Contains(string(csv), "\x1f"+audio.URL+"/ep2.mp3\x1f") {
+		t.Fatalf("expected the CSV to keep Ep1's upload and Ep2's original URL:\n%s", csv)
+	}
+
+	// Lose Ep1's new URL, as a failed run did before the CSV was saved as it went.
+	os.WriteFile(csvPath, []byte(strings.ReplaceAll(string(csv), ep1URL, audio.URL+"/ep1.mp3")), 0644)
+	mu.Lock()
+	gets, ep2OK = nil, true
+	mu.Unlock()
+
+	out, code = run("audio", "upload", "show", "--feed-dir", feedRoot)
+	if code != 0 {
+		t.Fatalf("second upload exited %d:\n%s", code, out)
+	}
+	if !strings.Contains(out, "already uploaded to S3") || !strings.Contains(out, "Retrying") {
+		t.Errorf("expected Ep1 to be found in the bucket and Ep2 to be retried:\n%s", out)
+	}
+	if strings.Join(gets, ",") != "/ep2.mp3,/ep2.mp3" {
+		t.Errorf("expected only Ep2 to be downloaded, twice; got %v", gets)
+	}
+	csv, _ = os.ReadFile(csvPath)
+	if !strings.Contains(string(csv), "\x1f"+ep1URL+"\x1f") || !strings.Contains(string(csv), "\x1f"+ep2URL+"\x1f") {
+		t.Errorf("expected both episodes at their public URLs:\n%s", csv)
 	}
 }
 

@@ -292,6 +292,8 @@ podcastinator audio upload example-show
 
 Downloads each episode that isn't already in the bucket, uploads it to `<prefix>/<slug>/` with a numbered, slugified name (`001-episode-title.mp3`) and an audio `Content-Type`, and rewrites the CSV with the new URLs. Local `file://` URLs, relative to the feed directory, are uploaded directly, and an episode already in the bucket by its S3 URL is pointed at its `public_url` one. Episodes keep their GUIDs, so subscribers don't see moved episodes as new.
 
+The CSV is saved after each episode, so a run that fails partway, or is stopped, keeps what it uploaded; run it again to carry on. A download that fails partway is tried up to three times. An episode whose file is already at its destination, from a run that stopped before saving the CSV, is pointed at it without being downloaded again, unless its size differs from the source's.
+
 ### `audio prune`
 
 ```shell
