@@ -5,6 +5,8 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -242,6 +244,59 @@ func manyRecords(n int) []feedcsv.Record {
 		}
 	}
 	return records
+}
+
+// TestBuildRetriesContentLengthOn5xx checks a HEAD request that gets a 5xx
+// is retried, and one that gets a 4xx isn't.
+func TestBuildRetriesContentLengthOn5xx(t *testing.T) {
+	defer feedrss.SetFetchRetryWait(time.Millisecond)()
+
+	for _, tc := range []struct {
+		name      string
+		failures  int
+		status    int
+		wantOK    bool
+		wantHeads int32
+	}{
+		{"503 then OK", 2, http.StatusServiceUnavailable, true, 3},
+		{"503 every time", 99, http.StatusServiceUnavailable, false, 3},
+		{"404", 99, http.StatusNotFound, false, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var heads atomic.Int32
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if int(heads.Add(1)) <= tc.failures {
+					w.WriteHeader(tc.status)
+					return
+				}
+				w.Header().Set("Content-Length", "1234")
+			}))
+			defer srv.Close()
+
+			opts := feedrss.FeedOptions{
+				Title:    "My Show",
+				FeedURL:  "https://podcasts.example.com/my-show/feed.xml",
+				ImageURL: "https://podcasts.example.com/my-show/image.jpg",
+			}
+			opts.SetDefaults()
+			records := []feedcsv.Record{{Title: "Ep1", Date: "Sat, 29 Jun 2002 03:00:00 GMT", URL: srv.URL + "/ep1.mp3"}}
+
+			xmlBytes, err := feedrss.Build(opts, records, io.Discard)
+			if tc.wantOK {
+				if err != nil {
+					t.Fatalf("Build: %v", err)
+				}
+				if !strings.Contains(string(xmlBytes), `length="1234"`) {
+					t.Errorf("expected length 1234 in the feed")
+				}
+			} else if err == nil || !strings.Contains(err.Error(), fmt.Sprintf("HTTP %d", tc.status)) {
+				t.Errorf("expected Build to fail with HTTP %d, got %v", tc.status, err)
+			}
+			if got := heads.Load(); got != tc.wantHeads {
+				t.Errorf("made %d HEAD requests, want %d", got, tc.wantHeads)
+			}
+		})
+	}
 }
 
 func TestBuildFetchesConcurrentlyUpToLimit(t *testing.T) {

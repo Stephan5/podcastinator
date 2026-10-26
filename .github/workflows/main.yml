@@ -1,9 +1,9 @@
 name: Tests
 
 on:
+  # Not pull_request too: a PR from a branch here shows its push run's checks,
+  # so that would test every commit twice.
   push:
-    branches: [ "**" ]
-  pull_request:
     branches: [ "**" ]
   # So a release can run them first
   workflow_call:
