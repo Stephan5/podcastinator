@@ -35,7 +35,7 @@ const FormatVersion = 5
 
 // DefaultConcurrency is how many Content-Length lookups Build makes at once
 // when FeedOptions.Concurrency isn't set.
-const DefaultConcurrency = 16
+const DefaultConcurrency = 8
 
 // httpClient makes the HEAD requests. The timeout stops one unresponsive host
 // from hanging a build.

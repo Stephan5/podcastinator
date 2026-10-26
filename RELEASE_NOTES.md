@@ -6,7 +6,11 @@ Newest first. A release's description on GitHub is its section here.
 
 ### Fixed
 
-* **`build` retries an episode's `HEAD` request when it gets a 5xx or loses its connection**, twice, 12 and then 24 seconds later, rather than failing the build. Rebuilding every feed sends thousands, so the odd 503 from S3 or CloudFront ended `make upgrade`-style rebuilds partway. A host that refuses the connection or doesn't resolve still fails straight away.
+* **`build` retries an episode's `HEAD` request when it gets a 5xx or loses its connection**, twice, 12 and then 24 seconds later, rather than failing the build. Rebuilding every feed sends thousands, so the odd 503 from S3 or CloudFront could stop a rebuild of every feed partway. A host that refuses the connection or doesn't resolve still fails straight away.
+
+### Changed
+
+* `build` makes 8 `HEAD` requests at once by default, down from 16, to go easier on the host. `--concurrency` still sets it.
 
 ## 0.13.0
 
