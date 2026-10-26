@@ -31,8 +31,9 @@ to the feed's location in the bucket from hosting.json. One of them has to
 supply both.
 
 Sends a HEAD request for every episode to fill in its length, so the audio has
-to be reachable. --concurrency sets how many run at once; lower it if a host
-rate-limits you. Leaves feed.xml alone if nothing in it has changed.
+to be reachable. A 5xx or a dropped connection is retried twice. --concurrency
+sets how many run at once; lower it if a host rate-limits you. Leaves feed.xml
+alone if nothing in it has changed.
 
 feed.xml is stamped with a hash of feed.csv, feed.json and hosting.json, so
 publish can refuse a feed that wasn't rebuilt after they changed.

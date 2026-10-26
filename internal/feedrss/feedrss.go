@@ -5,9 +5,11 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"html"
 	"io"
+	"net"
 	"net/http"
 	"regexp"
 	"sort"
@@ -327,17 +329,46 @@ func fetchContentLengths(records []feedcsv.Record, urls []string, fetcher func(s
 	return lengths, nil
 }
 
+// fetchAttempts is how many HEAD requests fetchContentLength makes before
+// giving up on a 5xx or a dropped connection. A build sends thousands, so the
+// odd 503 from S3 or CloudFront shouldn't end it.
+const fetchAttempts = 3
+
+// fetchRetryWait is the wait before the first retry, doubling after. It
+// outlasts the 10 seconds CloudFront caches an error for by default.
+var fetchRetryWait = 12 * time.Second
+
 // fetchContentLength returns rawURL's Content-Length, from a HEAD request.
 func fetchContentLength(rawURL string) (string, error) {
+	var (
+		length string
+		retry  bool
+		err    error
+	)
+	for attempt := 1; attempt <= fetchAttempts; attempt++ {
+		if attempt > 1 {
+			time.Sleep(fetchRetryWait << (attempt - 2))
+		}
+		if length, retry, err = headContentLength(rawURL); err == nil || !retry {
+			break
+		}
+	}
+	return length, err
+}
+
+// headContentLength reports whether a failure is worth retrying.
+func headContentLength(rawURL string) (string, bool, error) {
 	resp, err := httpClient.Head(rawURL) //nolint:noctx
 	if err != nil {
-		return "", err
+		// Not when it never connected: a wrong or dead host won't come back.
+		opErr, ok := errors.AsType[*net.OpError](err)
+		return "", !ok || opErr.Op != "dial", err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
-		return "", fmt.Errorf("HTTP %d", resp.StatusCode)
+		return "", resp.StatusCode >= 500, fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
-	return strings.TrimSpace(resp.Header.Get("Content-Length")), nil
+	return strings.TrimSpace(resp.Header.Get("Content-Length")), false, nil
 }
 
 // HashContent hashes a feed, ignoring the lastBuildDate and pubDate that

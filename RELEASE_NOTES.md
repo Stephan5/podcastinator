@@ -2,6 +2,12 @@
 
 Newest first. A release's description on GitHub is its section here.
 
+## Unreleased
+
+### Fixed
+
+* **`build` retries an episode's `HEAD` request when it gets a 5xx or loses its connection**, twice, 12 and then 24 seconds later, rather than failing the build. Rebuilding every feed sends thousands, so the odd 503 from S3 or CloudFront ended `make upgrade`-style rebuilds partway. A host that refuses the connection or doesn't resolve still fails straight away.
+
 ## 0.13.0
 
 ### Fixed

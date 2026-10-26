@@ -1136,7 +1136,7 @@ func TestPublishRefusesStaleFeed(t *testing.T) {
 
 	csvPath := filepath.Join(feedRoot, "hosted-show", "feed.csv")
 	csv, _ := os.ReadFile(csvPath)
-	os.WriteFile(csvPath, append(csv, []byte(episode("Ep3", "Sat, 13 Jul 2002 03:00:00 GMT", "https://example.com/ep3.mp3")+"\n")...), 0644)
+	os.WriteFile(csvPath, append(csv, []byte(episode("Ep3", "Sat, 13 Jul 2002 03:00:00 GMT", "http://127.0.0.1:1/ep3.mp3")+"\n")...), 0644)
 
 	for _, args := range [][]string{{"publish"}, {"publish", "hosted-show"}, {"publish", "--dry-run"}} {
 		out, code := run(append(args, "--feed-dir", feedRoot)...)
