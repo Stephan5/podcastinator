@@ -169,6 +169,19 @@ func latestDate(records []feedcsv.Record) time.Time {
 	return latest
 }
 
+// hostedCount returns how many of f's episodes are in the bucket, under the
+// feed's own key root.
+func hostedCount(host *hosting.Config, f feed, records []feedcsv.Record) int {
+	keyRoot := host.KeyRoot(f.slug)
+	hosted := 0
+	for _, rec := range records {
+		if key, ok := host.KeyForURL(rec.URL); ok && strings.HasPrefix(key, keyRoot) {
+			hosted++
+		}
+	}
+	return hosted
+}
+
 func printHeading(name string) {
 	sep := strings.Repeat("-", 51)
 	fmt.Printf("%s\n--- %s\n%s\n\n", sep, name, sep)

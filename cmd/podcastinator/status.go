@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"text/tabwriter"
 	"time"
 
@@ -90,14 +89,7 @@ func runStatus(ctx context.Context, feedDirAbs string, feeds []feed, remote bool
 
 		audio := "-"
 		if host != nil {
-			keyRoot := host.KeyRoot(f.slug)
-			hosted := 0
-			for _, rec := range records {
-				if key, ok := host.KeyForURL(rec.URL); ok && strings.HasPrefix(key, keyRoot) {
-					hosted++
-				}
-			}
-			audio = fmt.Sprintf("%d/%d hosted", hosted, len(records))
+			audio = fmt.Sprintf("%d/%d hosted", hostedCount(host, f, records), len(records))
 		}
 
 		source := "-"
