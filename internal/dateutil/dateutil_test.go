@@ -1,6 +1,7 @@
 package dateutil_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/Stephan5/podcastinator/internal/dateutil"
@@ -70,6 +71,9 @@ func TestReformatDate(t *testing.T) {
 		{"Jul 2, 2023", "%b %d, %Y", "02 Jul 2023 03:00:00 GMT"},
 		{"Jul. 3, 2023", "%b %d, %Y", "03 Jul 2023 03:00:00 GMT"},
 		{"2023 06 01", "%Y %m %d", "01 Jun 2023 03:00:00 GMT"},
+		{"10/10/2023", "%d/%m/%Y", "10 Oct 2023 03:00:00 GMT"},
+		{"5/3/2023", "%d/%m/%Y", "05 Mar 2023 03:00:00 GMT"},
+		{"05/03/23", "%d/%m/%y", "05 Mar 2023 03:00:00 GMT"},
 	}
 
 	for _, tc := range cases {
@@ -98,5 +102,41 @@ func TestReformatDateError(t *testing.T) {
 	_, err := dateutil.ReformatDate("not-a-date", "%b %d, %Y")
 	if err == nil {
 		t.Error("expected error for unparseable date")
+	}
+}
+
+func TestCheckFormat(t *testing.T) {
+	for _, f := range []string{"%b %d, %Y", "%d/%m/%Y", "%Y-%m-%d %H:%M"} {
+		if err := dateutil.CheckFormat(f); err != nil {
+			t.Errorf("CheckFormat(%q): %v", f, err)
+		}
+	}
+
+	cases := []struct {
+		format, wantHint string // wantHint "" means no suggestion
+	}{
+		{"DD/MM/yyyy", `try "%d/%m/%Y"`},
+		{"dd/mm/yyyy", `try "%d/%m/%Y"`},
+		{"YYYY-MM-DD HH:mm", `try "%Y-%m-%d %H:%M"`},
+		{"MMM D, YYYY", `try "%b %d, %Y"`},
+		{"dd/mm/yy", `try "%d/%m/%y"`},
+		{"02/01/2006", ""},
+		{"YYYYY", ""},
+		{"nonsense", ""},
+		{"yyyyMMdd", `try "%Y%m%d"`},
+	}
+	for _, tc := range cases {
+		err := dateutil.CheckFormat(tc.format)
+		if err == nil {
+			t.Errorf("CheckFormat(%q): expected an error", tc.format)
+			continue
+		}
+		hinted := strings.Contains(err.Error(), "try ")
+		if tc.wantHint == "" && hinted {
+			t.Errorf("CheckFormat(%q): unexpected suggestion: %v", tc.format, err)
+		}
+		if tc.wantHint != "" && !strings.Contains(err.Error(), tc.wantHint) {
+			t.Errorf("CheckFormat(%q) = %v, want it to contain %s", tc.format, err, tc.wantHint)
+		}
 	}
 }

@@ -285,7 +285,7 @@ Writes `feed/<slug>/feed.xml` from its `feed.csv` and `feed.json`. The feed and 
 podcastinator dates example-show --from "%b %d, %Y"
 ```
 
-Parses the CSV's date column with a strftime format and rewrites it as RFC 2822. Backs up the original to `feed.csv.old`.
+Parses the CSV's date column with a strftime format and rewrites it as RFC 2822. Backs up the original to `feed.csv.old`. Dates like `31/12/2023` take `--from "%d/%m/%Y"`; give it a pattern like `DD/MM/YYYY` instead and it suggests the strftime equivalent.
 
 ### `audio upload`
 

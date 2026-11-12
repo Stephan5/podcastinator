@@ -23,10 +23,11 @@ written by hand; imported feeds already have RFC 2822 dates.
 
 The original is backed up to feed.csv.old.
 
-Supported strftime specifiers: %Y %m %d %e %H %M %S %b %B %a %A %Z %T %p %I
+Supported strftime specifiers: %Y %y %m %d %e %H %M %S %b %B %a %A %Z %T %p %I
 
-Example:
-  podcastinator dates example-show --from "%b %d, %Y"`,
+Examples:
+  podcastinator dates example-show --from "%b %d, %Y"    # Jun 1, 2023
+  podcastinator dates example-show --from "%d/%m/%Y"     # 01/06/2023`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			feedDirAbs, err := resolveFeedDir()
@@ -47,6 +48,10 @@ Example:
 }
 
 func runDates(f feed, inputFormat string) error {
+	if err := dateutil.CheckFormat(inputFormat); err != nil {
+		return fmt.Errorf("--from: %w", err)
+	}
+
 	path := f.csvPath()
 	delim := f.cfg.DelimiterRune()
 

@@ -54,7 +54,8 @@ func FormatRFC2822(t time.Time) string {
 func strftimeToGoLayout(strftime string) (string, error) {
 	replacements := []struct{ from, to string }{
 		{"%Y", "2006"},
-		{"%m", "01"},
+		{"%y", "06"},
+		{"%m", "1"}, // matches "1" and "01"
 		{"%d", "2"}, // matches "1" and "01"
 		{"%e", "2"},
 		{"%H", "15"},
@@ -71,6 +72,14 @@ func strftimeToGoLayout(strftime string) (string, error) {
 		{"%j", ""},
 	}
 
+	if !strings.Contains(strftime, "%") {
+		err := fmt.Errorf("%q isn't a strftime format: it has no %% specifiers", strftime)
+		if hint := strftimeHint(strftime); hint != "" {
+			err = fmt.Errorf("%w; try %q", err, hint)
+		}
+		return "", err
+	}
+
 	layout := strftime
 	for _, r := range replacements {
 		layout = strings.ReplaceAll(layout, r.from, r.to)
@@ -81,6 +90,76 @@ func strftimeToGoLayout(strftime string) (string, error) {
 	}
 
 	return layout, nil
+}
+
+// CheckFormat returns an error if strftime isn't a format ReformatDate can use.
+func CheckFormat(strftime string) error {
+	_, err := strftimeToGoLayout(strftime)
+	return err
+}
+
+// strftimeHint translates a pattern like "DD/MM/yyyy" or "dd/mm/yy", as
+// spreadsheets and other languages write them, into strftime. Returns "" if
+// any letter in it isn't part of a recognised token.
+func strftimeHint(pattern string) string {
+	hasHour := strings.ContainsAny(pattern, "Hh")
+	var b strings.Builder
+	for i := 0; i < len(pattern); {
+		c := pattern[i]
+		j := i
+		for j < len(pattern) && pattern[j] == c {
+			j++
+		}
+		n := j - i
+		if !(c >= 'A' && c <= 'Z' || c >= 'a' && c <= 'z') {
+			b.WriteString(pattern[i:j])
+			i = j
+			continue
+		}
+		spec := patternSpec(c, n, hasHour)
+		if spec == "" {
+			return ""
+		}
+		b.WriteString(spec)
+		i = j
+	}
+	if b.String() == pattern {
+		return "" // no letters, so nothing to translate
+	}
+	return b.String()
+}
+
+// patternSpec returns the strftime specifier for n repeats of c, or "".
+func patternSpec(c byte, n int, hasHour bool) string {
+	switch {
+	case (c == 'Y' || c == 'y') && n == 4:
+		return "%Y"
+	case (c == 'Y' || c == 'y') && n == 2:
+		return "%y"
+	case c == 'M' && n <= 2:
+		return "%m"
+	case c == 'M' && n == 3:
+		return "%b"
+	case c == 'M' && n == 4:
+		return "%B"
+	case (c == 'D' || c == 'd') && n <= 2:
+		return "%d"
+	case c == 'd' && n == 3:
+		return "%a"
+	case c == 'd' && n == 4:
+		return "%A"
+	case c == 'H' && n <= 2:
+		return "%H"
+	case c == 'h' && n <= 2:
+		return "%I"
+	case c == 'm' && n <= 2 && hasHour: // minutes next to an hour
+		return "%M"
+	case c == 'm' && n <= 2: // otherwise the month, as in dd/mm/yyyy
+		return "%m"
+	case c == 's' && n <= 2:
+		return "%S"
+	}
+	return ""
 }
 
 // ReformatDate parses dateStr with a strftime format and returns it as an

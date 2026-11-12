@@ -2,6 +2,17 @@
 
 Newest first. A release's description on GitHub is its section here.
 
+## Unreleased
+
+### Fixed
+
+* **`dates --from` says when it isn't given a strftime format**, and suggests one: `--from 'DD/MM/yyyy'` now fails with `try "%d/%m/%Y"` up front, rather than with a parse error on the first date that didn't mention strftime at all.
+* `dates` reads `%m` as one or two digits, like `%d`, so `5/3/2024` parses with `%d/%m/%Y`.
+
+### Added
+
+* `dates` supports `%y`, the two-digit year.
+
 ## 0.15.0
 
 ### Added
