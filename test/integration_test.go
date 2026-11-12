@@ -16,6 +16,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -677,6 +678,41 @@ func TestUpdateRequiresSource(t *testing.T) {
 	}
 }
 
+// TestUpdateBuild checks update --build builds a feed that doesn't host its
+// audio, leaving its source URLs alone, and that a rerun with nothing new
+// leaves it as it is.
+func TestUpdateBuild(t *testing.T) {
+	var items []string
+	srv := sourceServer(t, &items)
+	items = []string{sourceItem(srv.URL, "Episode One", "Mon, 01 Jan 2024 09:00:00 GMT", "")}
+
+	feedRoot := t.TempDir()
+	writeHosting(t, feedRoot)
+	if out, code := run("import", srv.URL+"/feed.rss", "--feed-dir", feedRoot); code != 0 {
+		t.Fatalf("import exited %d:\n%s", code, out)
+	}
+	dir := filepath.Join(feedRoot, "bill-ben")
+
+	items = append([]string{sourceItem(srv.URL, "Episode Two", "Tue, 02 Jan 2024 09:00:00 GMT", "")}, items...)
+	out, code := run("update", "--build", "--feed-dir", feedRoot)
+	if code != 0 || !strings.Contains(out, "1 new episode(s)") || !strings.Contains(out, "Building: bill-ben") {
+		t.Fatalf("update --build exited %d:\n%s", code, out)
+	}
+	if strings.Contains(out, "Uploading audio") {
+		t.Errorf("expected no upload for a feed that doesn't host its audio:\n%s", out)
+	}
+	assertWellFormed(t, filepath.Join(dir, "feed.xml"))
+	out, _ = run("status", "--feed-dir", feedRoot)
+	if !regexp.MustCompile(`bill-ben\s+2\s+\S+\s+ok\s+0/2 hosted`).MatchString(out) {
+		t.Errorf("expected the feed built, with its audio at the source:\n%s", out)
+	}
+
+	out, code = run("update", "bill-ben", "--build", "--feed-dir", feedRoot)
+	if code != 0 || !strings.Contains(out, "no new episodes") || !strings.Contains(out, "feed.xml is up to date") {
+		t.Errorf("expected a rerun to change nothing, exit %d:\n%s", code, out)
+	}
+}
+
 var uuidPattern = regexp.MustCompile(`[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}`)
 
 // guids returns the <guid> elements in a feed, as written.
@@ -1105,6 +1141,9 @@ func fakeCDN(t *testing.T, bucket string) *httptest.Server {
 		}
 		defer out.Body.Close()
 		w.Header().Set("Content-Type", aws.ToString(out.ContentType))
+		if out.ContentLength != nil {
+			w.Header().Set("Content-Length", strconv.FormatInt(*out.ContentLength, 10))
+		}
 		if r.Method != http.MethodHead {
 			io.Copy(w, out.Body) //nolint:errcheck
 		}
@@ -1278,6 +1317,42 @@ func TestAudioUploadResumes(t *testing.T) {
 	csv, _ = os.ReadFile(csvPath)
 	if !strings.Contains(string(csv), "\x1f"+ep1URL+"\x1f") || !strings.Contains(string(csv), "\x1f"+ep2URL+"\x1f") {
 		t.Errorf("expected both episodes at their public URLs:\n%s", csv)
+	}
+}
+
+// TestUpdateBuildUploadsHostedFeed checks update --build uploads a hosted
+// feed's new episodes to the bucket before building it.
+func TestUpdateBuildUploadsHostedFeed(t *testing.T) {
+	bucket := s3TestBucket(t)
+	prefix := fmt.Sprintf("it-update-%d", os.Getpid())
+	cdn := fakeCDN(t, bucket)
+
+	var items []string
+	srv := sourceServer(t, &items)
+	items = []string{sourceItem(srv.URL, "Episode One", "Mon, 01 Jan 2024 09:00:00 GMT", "")}
+
+	feedRoot := t.TempDir()
+	os.WriteFile(filepath.Join(feedRoot, "hosting.json"), []byte(fmt.Sprintf(
+		`{"bucket":%q,"region":"eu-west-2","prefix":%q,"public_url":%q}`, bucket, prefix, cdn.URL)), 0644)
+	if out, code := run("import", srv.URL+"/feed.rss", "--feed-dir", feedRoot); code != 0 {
+		t.Fatalf("import exited %d:\n%s", code, out)
+	}
+	if out, code := run("audio", "upload", "bill-ben", "--feed-dir", feedRoot); code != 0 {
+		t.Fatalf("audio upload exited %d:\n%s", code, out)
+	}
+
+	items = append([]string{sourceItem(srv.URL, "Episode Two", "Tue, 02 Jan 2024 09:00:00 GMT", "")}, items...)
+	out, code := run("update", "bill-ben", "--build", "--feed-dir", feedRoot)
+	if code != 0 || !strings.Contains(out, "Uploading audio: bill-ben") || !strings.Contains(out, "Building: bill-ben") {
+		t.Fatalf("update --build exited %d:\n%s", code, out)
+	}
+	csv, _ := os.ReadFile(filepath.Join(feedRoot, "bill-ben", "feed.csv"))
+	if !strings.Contains(string(csv), "\x1f"+cdn.URL+"/"+prefix+"/bill-ben/2-episode-two.mp3\x1f") {
+		t.Errorf("expected Episode Two uploaded to the bucket:\n%s", csv)
+	}
+	out, _ = run("status", "--feed-dir", feedRoot)
+	if !regexp.MustCompile(`bill-ben\s+2\s+\S+\s+ok\s+2/2 hosted`).MatchString(out) {
+		t.Errorf("expected the feed built and fully hosted:\n%s", out)
 	}
 }
 

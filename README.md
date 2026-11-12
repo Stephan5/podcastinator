@@ -237,7 +237,7 @@ Give the role an inline policy that can only touch the feed files, so a bad push
 |-----------|----------------------------------------------|-----------------------------------------------------------------------|
 | Set up    | `init [--bucket b --public-url u]`           | Creates `feed/` and `hosting.json`                                    |
 | Import    | `import <url\|file> [--slug s] [--force]`    | Creates a feed from an existing podcast's RSS feed                    |
-|           | `update [feed...]`                           | Adds new episodes from each feed's `source`                           |
+|           | `update [feed...] [--build]`                 | Adds new episodes from each feed's `source`, and with `--build` uploads and builds them |
 | Generate  | `build [feed...] [--exclude a,b] [--concurrency n]` | Builds `feed.xml` from `feed.csv` and `feed.json`                     |
 |           | `dates <feed> --from <format>`               | Rewrites a hand-written CSV's dates as RFC 2822                       |
 | Self-host | `audio upload <feed>`                        | Copies a feed's episodes into the bucket and points its CSV at them   |
@@ -260,11 +260,14 @@ Fetches the feed and writes `feed/<slug>/feed.csv` (oldest episode first), `feed
 ### `update`
 
 ```shell
-podcastinator update               # every feed with a source
+podcastinator update                         # every feed with a source
 podcastinator update example-show
+podcastinator update example-show --build    # and upload and build it
 ```
 
-Re-fetches each feed's `source` and appends the episodes dated after the newest one in its CSV. It matches on date rather than URL, because self-hosted episodes no longer have their source URLs. Run `audio upload` and `build` afterwards.
+Re-fetches each feed's `source` and appends the episodes dated after the newest one in its CSV. It matches on date rather than URL, because self-hosted episodes no longer have their source URLs.
+
+`--build` gets each feed ready to publish as well. A feed that hosts its audio, meaning any of its episodes is already in the bucket, has the rest uploaded as `audio upload` would, which needs AWS credentials that can write audio. A feed that doesn't host its audio keeps its source URLs, so run `audio upload` once by hand to start hosting a feed. Then any feed whose `feed.xml` is out of date is built; `--concurrency` works as it does for `build`. Both steps resume where a failed run left off, even when there's nothing new. Without `--build`, run `audio upload` and `build` afterwards.
 
 ### `build`
 

@@ -2,6 +2,12 @@
 
 Newest first. A release's description on GitHub is its section here.
 
+## Unreleased
+
+### Added
+
+* **`update --build` refreshes a feed in one go**: it adds the new episodes, uploads their audio if the feed hosts its audio, and builds the feed. A feed counts as hosting its audio when any of its episodes is already in the bucket, so feeds that point at their source's audio keep doing so. It picks up where a failed run left off, so rerunning it after a dropped upload finishes the job.
+
 ## 0.14.0
 
 ### Fixed

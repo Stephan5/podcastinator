@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"image/jpeg"
 	"image/png"
@@ -16,6 +17,7 @@ import (
 	"github.com/Stephan5/podcastinator/internal/feedconfig"
 	"github.com/Stephan5/podcastinator/internal/feedcsv"
 	"github.com/Stephan5/podcastinator/internal/feedrss"
+	"github.com/Stephan5/podcastinator/internal/hosting"
 	"github.com/Stephan5/podcastinator/internal/urlutil"
 	"github.com/spf13/cobra"
 )
@@ -126,7 +128,12 @@ func runImport(feedDirAbs, source, slug string, force bool) error {
 }
 
 func newUpdateCmd() *cobra.Command {
-	return &cobra.Command{
+	var (
+		build       bool
+		concurrency int
+	)
+
+	cmd := &cobra.Command{
 		Use:     "update [feed...]",
 		GroupID: "import",
 		Short:   "Add new episodes from each feed's source",
@@ -135,13 +142,23 @@ episodes dated after the newest one already in feed.csv. Feeds without a
 source are skipped.
 
 Episodes are matched by date rather than URL, because once the audio is
-self-hosted the URLs no longer match the source's. Run "audio upload" and
-build afterwards.
+self-hosted the URLs no longer match the source's.
+
+--build gets each feed ready to publish as well. A feed that hosts its audio
+(any episode already in the bucket) has the rest uploaded, as "audio upload"
+would, which needs AWS credentials that can write audio; a feed that doesn't
+keeps its source URLs. Then any feed whose feed.xml is out of date is built.
+Both steps pick up where an earlier run that failed left off, even when there
+are no new episodes. Without --build, run "audio upload" and build yourself.
 
 Examples:
   podcastinator update
-  podcastinator update example-show`,
+  podcastinator update example-show
+  podcastinator update example-show --build`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if concurrency < 1 {
+				return fmt.Errorf("--concurrency must be at least 1, got %d", concurrency)
+			}
 			feedDirAbs, err := resolveFeedDir()
 			if err != nil {
 				return err
@@ -160,10 +177,57 @@ Examples:
 				if err := updateFeed(f); err != nil {
 					return fmt.Errorf("feed %q: %w", f.slug, err)
 				}
+				if build {
+					if err := uploadAndBuild(cmd.Context(), feedDirAbs, f, concurrency); err != nil {
+						return fmt.Errorf("feed %q: %w", f.slug, err)
+					}
+				}
 			}
 			return nil
 		},
 	}
+
+	cmd.Flags().BoolVar(&build, "build", false, "Also upload new episodes' audio, for feeds that host theirs, and build")
+	cmd.Flags().IntVar(&concurrency, "concurrency", feedrss.DefaultConcurrency, "HEAD requests to make at once when building")
+	return cmd
+}
+
+// uploadAndBuild uploads f's audio if it hosts some already and any isn't
+// yet, then builds f if its feed.xml is out of date.
+func uploadAndBuild(ctx context.Context, feedDirAbs string, f feed, concurrency int) error {
+	host, err := hosting.Load(feedDirAbs)
+	if err != nil {
+		return err
+	}
+	if host != nil {
+		records, err := f.records()
+		if err != nil {
+			return err
+		}
+		if hosted := hostedCount(host, f, records); hosted > 0 && hosted < len(records) {
+			fmt.Println()
+			printHeading("Uploading audio: " + f.slug)
+			if err := runAudioUpload(ctx, f, host); err != nil {
+				return err
+			}
+		}
+	}
+
+	state, err := buildState(feedDirAbs, f)
+	if err != nil {
+		return err
+	}
+	if state == "ok" {
+		fmt.Printf("%s: feed.xml is up to date\n", f.slug)
+		return nil
+	}
+	fmt.Println()
+	printHeading("Building: " + f.slug)
+	if err := buildFeed(feedDirAbs, f, concurrency); err != nil {
+		return err
+	}
+	fmt.Println()
+	return nil
 }
 
 func updateFeed(f feed) error {
